@@ -1,0 +1,43 @@
+message_limits:
+  max_length: 1900
+  max_attachment_size: 8388608 # 8MB
+  history_limit: 1000
+retry:
+  max_attempts: 3
+  webhook_timeout: 10
+verification:
+  keywords:
+    - 인증사진
+    - 인증 사진
+time:
+  timezone: Asia/Seoul
+  daily_check_hour: 22
+  daily_check_minute: 0
+  yesterday_check_hour: 9
+  yesterday_check_minute: 0
+  daily_start_hour: 12
+  daily_start_minute: 0
+  daily_end_hour: 3
+  daily_end_minute: 0
+  daily_end_second: 0
+  weekday_names:
+    - 월
+    - 화
+    - 수
+    - 목
+    - 금
+    - 토
+    - 일
+holidays:
+  file: holidays.csv
+  skip: true
+messages:
+  verification_success: "{name}, Your time has been recorded. The bill comes due. Always!"
+  verification_error: "Verification Error occurred. Please try again."
+  attach_image_request: "Please attach an image."
+  unverified_daily: "⚠️ 아직 오늘의 인증을 하지 않은 멤버들이에요:\n{members}\n자정까지 2시간 남았어요! 오늘의 기록 인증을 올리는 것 잊지 마세요! 💪"
+  unverified_yesterday: "⚠️ 어제 인증을 하지 않은 멤버(들)입니다:\n{members}\n벌칙을 수행해 주세요!"
+  unverified_friday: "⚠️ 지난 주 금요일 인증을 하지 않은 멤버(들)입니다:\n{members}\n벌칙을 수행해 주세요!"
+  all_verified: "🎉 모든 멤버가 인증을 완료했네요!\n💪 여러분의 꾸준한 노력이 멋져요. 내일도 힘내세요! 💫"
+  permission_error: "❌ 관리자만 사용할 수 있는 명령어입니다."
+  bot_permission_error: "Bot doesn't have permission to add reactions."
