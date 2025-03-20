@@ -5,6 +5,7 @@ import datetime
 import discord
 import logging
 from discord.ext import commands
+from datetime import timedelta
 
 logger = logging.getLogger('verification_bot')
 
@@ -146,7 +147,6 @@ class CommandHandler:
                 
                 # 메시지 길이 제한 체크
                 if len(message) > 2000:
-                    # 여러 메시지로 나누어 전송
                     parts = []
                     current_part = "📅 **등록된 공휴일 목록**\n\n"
                     current_year = None
@@ -293,18 +293,66 @@ class CommandHandler:
                 await ctx.send("❌ 휴가 등록 중 오류가 발생했습니다.")
         
         @self.bot.command()
-        async def cancel_vacation(ctx):
-            """등록된 휴가를 취소합니다"""
-            if ctx.author.id in self.bot.vacation_users:
-                start, end = self.bot.vacation_users[ctx.author.id]
-                del self.bot.vacation_users[ctx.author.id]
-                
-                if start == end:
-                    await ctx.send(f"✅ {ctx.author.mention}님의 {start} 휴가가 취소되었습니다.")
-                else:
-                    await ctx.send(f"✅ {ctx.author.mention}님의 {start} ~ {end} 휴가가 취소되었습니다.")
-            else:
+        async def cancel_vacation(ctx, date_str=None):
+            if ctx.author.id not in self.bot.vacation_users:
                 await ctx.send("❌ 등록된 휴가가 없습니다.")
+                return
+            
+            start, end = self.bot.vacation_users[ctx.author.id]
+            
+            # 특정 날짜 휴가만 취소
+            if date_str:
+                try:
+                    cancel_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    
+                    # 해당 날짜가 휴가 범위 내에 있는지 확인
+                    if not (start <= cancel_date <= end):
+                        await ctx.send(f"❌ {date_str}은(는) 등록된 휴가 범위({start} ~ {end}) 내에 없습니다.")
+                        return
+                        
+                    # 단일 날짜 휴가인 경우 전체 취소
+                    if start == end:
+                        del self.bot.vacation_users[ctx.author.id]
+                        await ctx.send(f"✅ {ctx.author.mention}님의 {start} 휴가가 취소되었습니다.")
+                        return
+                        
+                    # 시작일인 경우 시작일 변경
+                    if cancel_date == start:
+                        new_start = start + timedelta(days=1)
+                        if new_start > end:  # 범위를 벗어나면 전체 취소
+                            del self.bot.vacation_users[ctx.author.id]
+                        else:
+                            self.bot.vacation_users[ctx.author.id] = (new_start, end)
+                            await ctx.send(f"✅ {ctx.author.mention}님의 휴가가 {new_start} ~ {end}로 변경되었습니다.")
+                            return
+                            
+                    # 종료일인 경우 종료일 변경
+                    elif cancel_date == end:
+                        new_end = end - timedelta(days=1)
+                        if new_end < start:  # 범위를 벗어나면 전체 취소
+                            del self.bot.vacation_users[ctx.author.id]
+                        else:
+                            self.bot.vacation_users[ctx.author.id] = (start, new_end)
+                            await ctx.send(f"✅ {ctx.author.mention}님의 휴가가 {start} ~ {new_end}로 변경되었습니다.")
+                            return
+                            
+                    # 중간 날짜인 경우 두 구간으로 분리 (복잡해져서 전체 취소로 대체)
+                    else:
+                        del self.bot.vacation_users[ctx.author.id]
+                        await ctx.send(f"⚠️ 중간 날짜 취소는 지원하지 않습니다. {ctx.author.mention}님의 모든 휴가가 취소되었습니다.")
+                        return
+                        
+                except ValueError:
+                    await ctx.send("❌ 날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식으로 입력해주세요.")
+                    return
+            
+            # 모든 휴가 취소
+            del self.bot.vacation_users[ctx.author.id]
+            
+            if start == end:
+                await ctx.send(f"✅ {ctx.author.mention}님의 {start} 휴가가 취소되었습니다.")
+            else:
+                await ctx.send(f"✅ {ctx.author.mention}님의 {start} ~ {end} 휴가가 취소되었습니다.")
         
         @self.bot.command()
         async def my_vacation(ctx):
@@ -323,6 +371,11 @@ class CommandHandler:
         @commands.has_permissions(administrator=True)
         async def list_vacations(ctx):
             """현재 등록된 모든 휴가 목록을 확인합니다 (관리자 전용)"""
+            # 권한 체크 - 서버 채널에서만 관리자 권한 확인
+            if isinstance(ctx.channel, discord.TextChannel) and not ctx.author.guild_permissions.administrator:
+                await ctx.send(self.config.MESSAGES['permission_error'])
+                return
+            
             if not self.bot.vacation_users:
                 await ctx.send("현재 등록된 휴가가 없습니다.")
                 return

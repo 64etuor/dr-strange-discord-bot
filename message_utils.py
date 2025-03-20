@@ -5,6 +5,9 @@ import discord
 import re
 import datetime
 from typing import List, Optional, Tuple, Set
+import logging
+
+logger = logging.getLogger(__name__)
 
 class MessageUtility:
     """메시지 관련 유틸리티 클래스"""
@@ -56,49 +59,50 @@ class MessageUtility:
         return chunks
     
     def parse_vacation_date(self, content: str) -> Optional[Tuple[datetime.date, datetime.date]]:
-        """
-        휴가 메시지에서 날짜 정보 추출
-        형식: 
-        - "휴가 YYYY-MM-DD" (하루)
-        - "휴가 YYYY-MM-DD ~ YYYY-MM-DD" (기간)
-        
-        반환:
-        - (시작일, 종료일) 또는 오류 시 None
-        """
-        # 날짜 패턴 (YYYY-MM-DD)
-        date_pattern = r'(\d{4}-\d{2}-\d{2})'
-        
-        # 하루 휴가 패턴 확인
-        single_day_match = re.search(f"휴가\\s+{date_pattern}", content)
-        if single_day_match:
-            try:
-                date_str = single_day_match.group(1)
-                vacation_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
-                return (vacation_date, vacation_date)  # 시작일과 종료일이 같음
-            except ValueError:
-                return None
-        
-        # 기간 휴가 패턴 확인
-        range_match = re.search(f"휴가\\s+{date_pattern}\\s*~\\s*{date_pattern}", content)
-        if range_match:
-            try:
-                start_str = range_match.group(1)
-                end_str = range_match.group(2)
-                start_date = datetime.datetime.strptime(start_str, '%Y-%m-%d').date()
-                end_date = datetime.datetime.strptime(end_str, '%Y-%m-%d').date()
-                
-                # 종료일이 시작일보다 이전이면 None 반환 - 여기가 제대로 작동하도록 수정
-                if end_date < start_date:
+        """휴가 메시지에서 날짜 정보 추출"""
+        try:
+            # 날짜 패턴 (YYYY-MM-DD)
+            date_pattern = r'(\d{4}-\d{2}-\d{2})'
+            
+            # 하루 휴가 패턴 확인
+            single_day_match = re.search(f"휴가\\s+{date_pattern}", content)
+            if single_day_match:
+                try:
+                    date_str = single_day_match.group(1)
+                    vacation_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+                    return (vacation_date, vacation_date)  # 시작일과 종료일이 같음
+                except ValueError:
                     return None
+            
+            # 날짜 범위 패턴 확인
+            range_match = re.search(r"휴가\s+(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})", content)
+            if range_match:
+                try:
+                    start_str = range_match.group(1)
+                    end_str = range_match.group(2)
+                    start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+                    end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
                     
-                return (start_date, end_date)
-            except ValueError:
+                    # 종료일이 시작일보다 이전이면 날짜 순서 교체
+                    if end_date < start_date:
+                        logger.warning(f"휴가 날짜 범위가 잘못되었습니다: {start_date} ~ {end_date}. 순서를 바꿉니다.")
+                        start_date, end_date = end_date, start_date
+                        
+                    return (start_date, end_date)
+                except ValueError as e:
+                    logger.error(f"날짜 파싱 오류: {e}")
+                    return None
+            
+            # 잘못된 형식(예: 2023/01/01, 01-15-2023)이면 None 반환
+            if re.search(r"휴가\s+[\d/\-]+", content) and not re.search(r"휴가\s+\d{4}-\d{2}-\d{2}", content):
                 return None
-        
-        # 잘못된 형식(예: 2023/01/01, 01-15-2023)이면 None 반환
-        if re.search(r"휴가\s+[\d/\-]+", content) and not re.search(r"휴가\s+\d{4}-\d{2}-\d{2}", content):
-            return None
-        
-        # 기본 - 당일만 휴가로 처리
-        current_date = datetime.datetime.now().date()
-        return (current_date, current_date) 
+            
+            # 기본 - 당일만 휴가로 처리
+            current_date = datetime.datetime.now().date()
+            return (current_date, current_date)
+            
+        except Exception as e:
+            logger.error(f"휴가 날짜 파싱 중 오류: {e}")
+            # 오류 시 현재 날짜 사용
+            current_date = datetime.datetime.now().date()
+            return (current_date, current_date) 

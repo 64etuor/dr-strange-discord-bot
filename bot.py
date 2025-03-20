@@ -3,10 +3,10 @@
 """
 import discord
 from discord.ext import commands
-import datetime
+import datetime as dt
+from datetime import datetime, time, timedelta, timezone
 import asyncio
 import logging
-from datetime import datetime, time, timedelta
 
 from message_utils import MessageUtility
 from time_utils import TimeUtility
@@ -35,6 +35,12 @@ class VerificationBot:
         intents.members = True 
         self.bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
         
+        # 휴가 관리를 위한 딕셔너리 추가 - 위치 변경!
+        self.vacation_users = {}
+        
+        # Bot 객체에 vacation_users 속성 추가 (중요!)
+        self.bot.vacation_users = self.vacation_users
+        
         # 서비스 초기화
         self.webhook_service = WebhookService(self.config)
         self.verification_service = VerificationService(
@@ -49,10 +55,6 @@ class VerificationBot:
             self.bot, self.config, self.verification_service, self.task_manager, self.time_util
         )
         
-        # 휴가 관리를 위한 딕셔너리 추가
-        # 형식: {user_id: (start_date, end_date)}
-        self.vacation_users = {}
-        
         # 이벤트 핸들러 등록
         self._setup_event_handlers()
     
@@ -64,8 +66,8 @@ class VerificationBot:
             await self.webhook_service.initialize()
             
             # 시간 디버깅
-            now = datetime.datetime.now()
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.now()
+            now_utc = datetime.now(timezone.utc)
             now_kst = self.time_util.now()
             
             logger.info("=== Time Debug ===")
@@ -86,17 +88,21 @@ class VerificationBot:
                 return
                 
             try:
-                # 인증 메시지 처리
-                if self.message_util.is_verification_message(message.content):
-                    await self.verification_service.process_verification_message(message)
-                # 휴가 메시지 처리 추가
-                elif self.message_util.is_vacation_message(message.content):
-                    await self.verification_service.process_vacation_request(message)
+                # 인증 채널에서만 인증 및 휴가 메시지 처리 (중요!)
+                if message.channel.id == self.config.VERIFICATION_CHANNEL_ID:
+                    await self._process_message(message)
             except Exception as e:
                 logger.error(f"메시지 처리 중 오류: {e}", exc_info=True)
             
             await self.bot.process_commands(message)
     
+    async def _process_message(self, message):
+        """메시지 처리 로직 (채널 ID 체크 없이)"""
+        if self.message_util.is_verification_message(message.content):
+            await self.verification_service.process_verification_message(message)
+        elif self.message_util.is_vacation_message(message.content):
+            await self.verification_service.process_vacation_request(message)
+
     def run(self):
         """봇 실행"""
         try:
@@ -119,4 +125,48 @@ class VerificationBot:
             if loop.is_running():
                 loop.create_task(self.webhook_service.cleanup())
             else:
-                loop.run_until_complete(self.webhook_service.cleanup()) 
+                loop.run_until_complete(self.webhook_service.cleanup())
+
+    def cleanup_old_vacation_data(self):
+        """만료된 휴가 데이터 정리"""
+        today = datetime.now().date()
+        expired_entries = []
+        
+        # 만료된 휴가 항목 찾기
+        for user_id, (start_date, end_date) in self.vacation_users.items():
+            if end_date < today - timedelta(days=7):  # 일주일 이상 지난 데이터
+                expired_entries.append(user_id)
+        
+        # 만료된 항목 삭제
+        for user_id in expired_entries:
+            del self.vacation_users[user_id]
+        
+        if expired_entries:
+            logger.info(f"{len(expired_entries)}개의 만료된 휴가 데이터 정리 완료")
+            self._save_vacation_data()  # 변경사항 저장 
+
+    def check_permissions(self, channel):
+        """필요한 권한이 있는지 확인"""
+        if not channel or not isinstance(channel, discord.TextChannel):
+            logger.error(f"올바른 채널이 아닙니다: {channel}")
+            return False
+        
+        permissions = channel.permissions_for(channel.guild.me)
+        required_permissions = [
+            "read_message_history",
+            "view_channel", 
+            "send_messages",
+            "add_reactions",
+            "embed_links"
+        ]
+        
+        missing = []
+        for perm in required_permissions:
+            if not getattr(permissions, perm, False):
+                missing.append(perm)
+        
+        if missing:
+            logger.error(f"필요한 권한이 없습니다: {', '.join(missing)}")
+            return False
+        
+        return True 

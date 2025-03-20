@@ -12,6 +12,8 @@ class TestMessageProcessing:
         # 설정 모의 객체 생성
         config = MagicMock()
         config.VERIFICATION_KEYWORDS = ["인증사진", "인증 사진"]
+        # 중요: 인증 채널 ID 설정
+        config.VERIFICATION_CHANNEL_ID = 123456789  # 테스트용 채널 ID
         
         # 봇 생성
         with patch('discord.ext.commands.Bot', autospec=True):
@@ -46,6 +48,10 @@ class TestMessageProcessing:
         message.author.bot = False
         message.content = "인증사진 올립니다"
         
+        # 중요: channel.id를 인증 채널 ID로 설정
+        message.channel = AsyncMock()
+        message.channel.id = bot.config.VERIFICATION_CHANNEL_ID  # 이 부분이 핵심입니다
+        
         # 메시지 처리 이벤트 호출
         on_message = [h for h in bot.bot.event.call_args_list if h[0][0].__name__ == 'on_message'][0][0][0]
         await on_message(message)
@@ -64,6 +70,10 @@ class TestMessageProcessing:
         message.author = MagicMock(id=12345)
         message.author.bot = False
         message.content = "휴가 2023-01-15 ~ 2023-01-20"
+        
+        # 중요: channel.id를 인증 채널 ID로 설정
+        message.channel = AsyncMock()
+        message.channel.id = bot.config.VERIFICATION_CHANNEL_ID  # 이 부분이 핵심입니다
         
         # 메시지 처리 이벤트 호출
         on_message = [h for h in bot.bot.event.call_args_list if h[0][0].__name__ == 'on_message'][0][0][0]

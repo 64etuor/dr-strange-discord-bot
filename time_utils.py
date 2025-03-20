@@ -3,16 +3,32 @@
 """
 import datetime
 from typing import Tuple
+from datetime import timezone
 
 class TimeUtility:
     """시간 관련 유틸리티 클래스"""
     
     def __init__(self, config):
         self.config = config
+        self.KST = timezone(datetime.timedelta(hours=9))
     
     def now(self):
-        """현재 시간 반환 (설정된 타임존 기준)"""
-        return datetime.datetime.now(self.config.TIMEZONE)
+        """현재 KST 시간 반환"""
+        return datetime.datetime.now(self.KST)
+    
+    def utc_now(self):
+        """현재 UTC 시간 반환"""
+        return datetime.datetime.now(timezone.utc)
+    
+    def convert_to_kst(self, dt):
+        """주어진 시간을 KST로 변환"""
+        if dt.tzinfo is None:
+            # naive datetime을 UTC로 가정하고 변환
+            utc_dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            utc_dt = dt
+        
+        return utc_dt.astimezone(self.KST)
     
     def is_weekend(self, weekday: int) -> bool:
         """주말인지 확인 (토: 5, 일: 6)"""
@@ -48,7 +64,7 @@ class TimeUtility:
         
         return check_start, check_end
     
-    def get_today_range(self):
+    def get_today_range(self) -> Tuple[datetime.datetime, datetime.datetime]:
         """오늘의 인증 시간 범위 반환"""
         now = self.now()
         
