@@ -54,7 +54,7 @@ class VerificationService:
     async def process_verification_message(self, message: discord.Message) -> None:
         """인증 메시지 처리"""
         try:
-            # 반응 추가 (권한 체크 수정)
+            # 반응 추가
             if message.guild and message.channel.permissions_for(message.guild.me).add_reactions:
                 await message.add_reaction('✅')
 

@@ -77,7 +77,7 @@ class ConfigManager:
         self.UTC_YESTERDAY_CHECK_HOUR = (self.YESTERDAY_CHECK_HOUR - 9) % 24
         
         # 요일 이름
-        self.WEEKDAY_NAMES = config.get('time', {}).get('weekday_names', ['월', '화', '수', '목', '금', '토', '일'])
+        self.WEEKDAY_NAMES = time_config.get('weekday_names', ['월', '화', '수', '목', '금', '토', '일'])
         
         # 공휴일 설정
         self.HOLIDAYS_FILE = config.get('holidays', {}).get('file', 'holidays.csv')

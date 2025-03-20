@@ -3,24 +3,22 @@ pytest 공통 픽스처 및 설정
 """
 import os
 import sys
-
-# 프로젝트 루트 디렉토리를 Python 경로에 추가
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 import pytest
 import tempfile
 import yaml
 import discord
 import datetime
 import pytz
-from unittest.mock import MagicMock, AsyncMock, PropertyMock
+from unittest.mock import MagicMock, AsyncMock
 
-# 상대 경로 대신 절대 경로 사용
-from config.config_manager import ConfigManager
-from utils.time_utils import TimeUtility
-from utils.message_utils import MessageUtility
-from services.webhook_service import WebhookService
-from services.verification_service import VerificationService
+# 프로젝트 루트 디렉토리를 Python 경로에 추가
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from config_manager import ConfigManager
+from time_utils import TimeUtility
+from message_utils import MessageUtility
+from webhook_service import WebhookService
+from verification_service import VerificationService
 
 @pytest.fixture
 def temp_config_file():
@@ -77,41 +75,7 @@ def temp_config_file():
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config_data, f, allow_unicode=True)
         
-        # 임시 holidays 파일 생성
-        holidays_path = os.path.join(temp_dir, "test_holidays.csv")
-        with open(holidays_path, 'w', encoding='utf-8') as f:
-            f.write("index,date,holiday name\n")
-            f.write("1,2025-01-01,신정(양력설)\n")
-            f.write("2,2025-05-05,어린이날\n")
-        
         yield config_path
-
-@pytest.fixture
-def mock_channel():
-    """Mocked 디스코드 채널"""
-    channel = MagicMock()
-    channel.name = "test-channel"
-    channel.send = AsyncMock()
-    
-    # TextChannel로 인식되도록 설정
-    channel.__class__ = discord.TextChannel
-    
-    # 권한 설정
-    permissions = MagicMock()
-    permissions.read_message_history = True
-    permissions.view_channel = True
-    permissions.send_messages = True
-    permissions.add_reactions = True
-    
-    # guild.me 설정
-    guild = MagicMock()
-    guild.me = MagicMock()
-    channel.guild = guild
-    
-    # permissions_for 설정
-    channel.permissions_for = MagicMock(return_value=permissions)
-    
-    return channel
 
 @pytest.fixture
 def temp_holidays_file():
@@ -128,31 +92,21 @@ def temp_holidays_file():
     os.unlink(filename)
 
 @pytest.fixture
-def config_manager(temp_config_file):
+def config_manager(temp_config_file, temp_holidays_file):
     """설정 관리자 픽스처"""
     # 환경 변수 설정
     os.environ['DISCORD_TOKEN'] = 'test_token'
     os.environ['VERIFICATION_CHANNEL_ID'] = '123456789'
     os.environ['WEBHOOK_URL'] = 'https://test.webhook.url'
     
-    # 임시 공휴일 파일 생성
-    holidays_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.csv')
-    holidays_file.write("index,date,holiday name\n")
-    holidays_file.write("1,2025-01-01,신정(양력설)\n")
-    holidays_file.write("2,2025-05-05,어린이날\n")
-    holidays_file.close()
-    
     # 설정 관리자 생성
     config = ConfigManager(config_file=temp_config_file)
     
-    # 공휴일 파일 경로 직접 설정
-    config.HOLIDAYS_FILE = holidays_file.name
-    config.load_holidays()
+    # 임시 공휴일 파일 경로 설정
+    config.HOLIDAYS_FILE = temp_holidays_file
+    config.load_holidays()  # 공휴일 다시 로드
     
-    yield config
-    
-    # 테스트 후 임시 파일 삭제
-    os.unlink(holidays_file.name)
+    return config
 
 @pytest.fixture
 def time_util(config_manager):
@@ -175,10 +129,10 @@ def mock_session():
     response.text = AsyncMock(return_value="Success")
     
     # context manager 모킹
-    cm = AsyncMock()
-    cm.__aenter__.return_value = response
+    context_manager = AsyncMock()
+    context_manager.__aenter__.return_value = response
     
-    session.post = AsyncMock(return_value=cm)
+    session.post = AsyncMock(return_value=context_manager)
     session.close = AsyncMock()
     
     return session
@@ -202,6 +156,33 @@ def webhook_service(config_manager):
     service.session = session
     
     return service
+
+@pytest.fixture
+def mock_channel():
+    """Mocked 디스코드 채널"""
+    channel = MagicMock()
+    channel.name = "test-channel"
+    channel.send = AsyncMock()
+    
+    # TextChannel 타입으로 설정
+    channel.__class__ = discord.TextChannel
+    
+    # 권한 설정
+    permissions = MagicMock()
+    permissions.read_message_history = True
+    permissions.view_channel = True
+    permissions.send_messages = True
+    permissions.add_reactions = True
+    
+    # guild.me 설정
+    guild = MagicMock()
+    guild.me = MagicMock()
+    channel.guild = guild
+    
+    # permissions_for 설정
+    channel.permissions_for = MagicMock(return_value=permissions)
+    
+    return channel
 
 @pytest.fixture
 def mock_bot():

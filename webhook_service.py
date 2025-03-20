@@ -27,10 +27,10 @@ class WebhookService:
     
     async def send_webhook(self, webhook_data: dict) -> bool:
         """웹훅 전송"""
-        # 세션이 없으면 초기화
         await self.initialize()
-        
+
         try:
+            # async with 구문 대신 직접 post 호출로 변경
             response = await self.session.post(
                 self.config.WEBHOOK_URL, 
                 json=webhook_data,
@@ -56,7 +56,13 @@ class WebhookService:
             
             logger.info(f"Webhook sent successfully: Status {response.status}")
             return True
-            
+
+        except aiohttp.ClientError as e:
+            logger.error(f"Webhook request failed: {e}")
+            return False
+        except asyncio.TimeoutError:
+            logger.error(f"Webhook request timed out after {self.config.WEBHOOK_TIMEOUT} seconds")
+            return False
         except Exception as e:
             logger.error(f"Unexpected error during webhook request: {e}", exc_info=True)
             return False 
