@@ -3,7 +3,7 @@ ConfigManager 테스트
 """
 import os
 import pytest
-from config.config_manager import ConfigManager
+from config_manager import ConfigManager
 import datetime
 
 def test_config_loading(config_manager):
@@ -38,6 +38,9 @@ def test_default_config(temp_config_file):
     """기본 설정 테스트"""
     # 설정 파일을 지우고 기본값 사용 테스트
     os.remove(temp_config_file)
+    
+    # 환경 변수 설정
+    os.environ['DISCORD_TOKEN'] = 'default_test_token'
     
     config = ConfigManager(config_file=temp_config_file)
     # 기본값 확인
