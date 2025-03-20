@@ -2,7 +2,7 @@
 MessageUtility 테스트
 """
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 import discord
 
 def test_is_verification_message(message_util):
