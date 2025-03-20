@@ -6,6 +6,7 @@ from discord.ext import commands
 import datetime
 import asyncio
 import logging
+from datetime import datetime, time, timedelta
 
 from message_utils import MessageUtility
 from time_utils import TimeUtility
@@ -27,12 +28,12 @@ class VerificationBot:
         self.message_util = MessageUtility(self.config)
         
         # 봇 설정
-        intents = discord.Intents.default()
+        intents = discord.Intents.all()
         intents.message_content = True
         intents.guilds = True
         intents.reactions = True
         intents.members = True 
-        self.bot = commands.Bot(command_prefix='!', intents=intents)
+        self.bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
         
         # 서비스 초기화
         self.webhook_service = WebhookService(self.config)
@@ -47,6 +48,10 @@ class VerificationBot:
         self.command_handler = CommandHandler(
             self.bot, self.config, self.verification_service, self.task_manager, self.time_util
         )
+        
+        # 휴가 관리를 위한 딕셔너리 추가
+        # 형식: {user_id: (start_date, end_date)}
+        self.vacation_users = {}
         
         # 이벤트 핸들러 등록
         self._setup_event_handlers()
@@ -81,8 +86,12 @@ class VerificationBot:
                 return
                 
             try:
+                # 인증 메시지 처리
                 if self.message_util.is_verification_message(message.content):
                     await self.verification_service.process_verification_message(message)
+                # 휴가 메시지 처리 추가
+                elif self.message_util.is_vacation_message(message.content):
+                    await self.verification_service.process_vacation_request(message)
             except Exception as e:
                 logger.error(f"메시지 처리 중 오류: {e}", exc_info=True)
             

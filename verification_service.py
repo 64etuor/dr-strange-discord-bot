@@ -27,8 +27,18 @@ class VerificationService:
         """인증 데이터 가져오기"""
         verified_users: Set[int] = set()
         unverified_members: List[discord.Member] = []
+        vacation_users: Set[int] = set()  # 휴가 중인 사용자 목록
         
         try:
+            # 체크 날짜 (자정 기준)
+            check_date = end_time.date()
+            
+            # 휴가 중인 사용자 필터링
+            for user_id, (start_date, end_date) in self.bot.vacation_users.items():
+                if start_date <= check_date <= end_date:
+                    vacation_users.add(user_id)
+                    logger.info(f"User {user_id} is on vacation from {start_date} to {end_date}")
+            
             # 메시지 히스토리에서 인증한 사용자 확인
             async for message in channel.history(
                 after=start_time,
@@ -39,9 +49,9 @@ class VerificationService:
                     any(self.message_util.is_valid_image(attachment) for attachment in message.attachments)):
                     verified_users.add(message.author.id)
             
-            # 인증하지 않은 멤버 확인
+            # 인증하지 않은 멤버 확인 (휴가 사용자 제외)
             async for member in channel.guild.fetch_members():
-                if not member.bot and member.id not in verified_users:
+                if not member.bot and member.id not in verified_users and member.id not in vacation_users:
                     unverified_members.append(member)
                     
         except discord.Forbidden:
@@ -225,3 +235,39 @@ class VerificationService:
         finally:
             if 'verified_users' in locals():
                 verified_users.clear() 
+    
+    async def process_vacation_request(self, message: discord.Message) -> None:
+        """휴가 요청 처리"""
+        try:
+            # 휴가 날짜 파싱
+            vacation_dates = self.message_util.parse_vacation_date(message.content)
+            if not vacation_dates:
+                await message.channel.send("❌ 휴가 형식이 올바르지 않습니다. `휴가 YYYY-MM-DD` 또는 `휴가 YYYY-MM-DD ~ YYYY-MM-DD` 형식으로 입력해주세요.")
+                return
+            
+            start_date, end_date = vacation_dates
+            
+            # 휴가 정보 등록
+            self.bot.vacation_users[message.author.id] = (start_date, end_date)
+            
+            # 확인 메시지 전송
+            if start_date == end_date:
+                vacation_msg = f"✅ {message.author.mention}님의 {start_date} 휴가가 등록되었습니다."
+            else:
+                vacation_msg = f"✅ {message.author.mention}님의 {start_date} ~ {end_date} 휴가가 등록되었습니다."
+            
+            await message.channel.send(vacation_msg)
+            
+            # 반응 추가 - 권한 체크 부분 수정
+            try:
+                # isinstance 체크와 권한 체크를 분리하여 오류 처리
+                if isinstance(message.guild, discord.Guild):
+                    permissions = message.channel.permissions_for(message.guild.me)
+                    if permissions.add_reactions:
+                        await message.add_reaction('✈️')
+            except Exception as e:
+                logger.warning(f"이모지 추가 중 오류: {e}")
+                
+        except Exception as e:
+            logger.error(f"휴가 처리 중 오류: {e}", exc_info=True)
+            await message.channel.send("❌ 휴가 등록 중 오류가 발생했습니다. 다시 시도해주세요.") 

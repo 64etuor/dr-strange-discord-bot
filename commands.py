@@ -249,6 +249,144 @@ class CommandHandler:
                           f"이전: {old_count}개 → 현재: {new_count}개")
             
         @self.bot.command()
+        async def vacation(ctx, start_date: str = None, end_date: str = None):
+            """
+            휴가를 등록합니다
+            
+            사용법:
+            !vacation - 당일 휴가 등록
+            !vacation YYYY-MM-DD - 특정 날짜 휴가 등록
+            !vacation YYYY-MM-DD YYYY-MM-DD - 기간 휴가 등록
+            """
+            try:
+                if start_date:
+                    # 날짜 형식 검증
+                    try:
+                        start = datetime.datetime.strptime(start_date, '%Y-%m-%d').date()
+                        
+                        if end_date:
+                            end = datetime.datetime.strptime(end_date, '%Y-%m-%d').date()
+                            if end < start:
+                                await ctx.send("❌ 종료일이 시작일보다 이전입니다.")
+                                return
+                        else:
+                            end = start  # 종료일이 없으면 시작일과 동일하게 설정
+                    except ValueError:
+                        await ctx.send("❌ 날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식으로 입력해주세요.")
+                        return
+                else:
+                    # 인자가 없으면 당일 휴가
+                    start = datetime.datetime.now().date()
+                    end = start
+                
+                # 휴가 등록
+                self.bot.vacation_users[ctx.author.id] = (start, end)
+                
+                # 확인 메시지
+                if start == end:
+                    await ctx.send(f"✅ {ctx.author.mention}님의 {start} 휴가가 등록되었습니다.")
+                else:
+                    await ctx.send(f"✅ {ctx.author.mention}님의 {start} ~ {end} 휴가가 등록되었습니다.")
+                
+            except Exception as e:
+                logger.error(f"휴가 명령어 처리 중 오류: {e}", exc_info=True)
+                await ctx.send("❌ 휴가 등록 중 오류가 발생했습니다.")
+        
+        @self.bot.command()
+        async def cancel_vacation(ctx):
+            """등록된 휴가를 취소합니다"""
+            if ctx.author.id in self.bot.vacation_users:
+                start, end = self.bot.vacation_users[ctx.author.id]
+                del self.bot.vacation_users[ctx.author.id]
+                
+                if start == end:
+                    await ctx.send(f"✅ {ctx.author.mention}님의 {start} 휴가가 취소되었습니다.")
+                else:
+                    await ctx.send(f"✅ {ctx.author.mention}님의 {start} ~ {end} 휴가가 취소되었습니다.")
+            else:
+                await ctx.send("❌ 등록된 휴가가 없습니다.")
+        
+        @self.bot.command()
+        async def my_vacation(ctx):
+            """내 휴가 정보를 확인합니다"""
+            if ctx.author.id in self.bot.vacation_users:
+                start, end = self.bot.vacation_users[ctx.author.id]
+                
+                if start == end:
+                    await ctx.send(f"🗓️ {ctx.author.mention}님은 {start}에 휴가 예정입니다.")
+                else:
+                    await ctx.send(f"🗓️ {ctx.author.mention}님은 {start} ~ {end} 기간에 휴가 예정입니다.")
+            else:
+                await ctx.send("❌ 등록된 휴가가 없습니다.")
+        
+        @self.bot.command()
+        @commands.has_permissions(administrator=True)
+        async def list_vacations(ctx):
+            """현재 등록된 모든 휴가 목록을 확인합니다 (관리자 전용)"""
+            if not self.bot.vacation_users:
+                await ctx.send("현재 등록된 휴가가 없습니다.")
+                return
+            
+            # 현재 날짜
+            today = datetime.datetime.now().date()
+            
+            # 임베드 생성
+            embed = discord.Embed(
+                title="🏝️ 휴가 목록",
+                description=f"현재 시간: {today}",
+                color=discord.Color.gold()
+            )
+            
+            # 현재 진행 중인 휴가와 예정된 휴가 분류
+            active_vacations = []
+            upcoming_vacations = []
+            past_vacations = []
+            
+            for user_id, (start, end) in self.bot.vacation_users.items():
+                user = ctx.guild.get_member(user_id)
+                if not user:
+                    continue
+                
+                vacation_str = f"{user.mention}: "
+                if start == end:
+                    vacation_str += f"{start}"
+                else:
+                    vacation_str += f"{start} ~ {end}"
+                
+                if start <= today <= end:
+                    active_vacations.append(vacation_str)
+                elif start > today:
+                    upcoming_vacations.append(vacation_str)
+                elif end < today:
+                    past_vacations.append(vacation_str)
+            
+            # 현재 진행 중인 휴가
+            if active_vacations:
+                embed.add_field(
+                    name="🔴 현재 휴가 중",
+                    value="\n".join(active_vacations),
+                    inline=False
+                )
+            
+            # 예정된 휴가
+            if upcoming_vacations:
+                embed.add_field(
+                    name="🟡 예정된 휴가",
+                    value="\n".join(upcoming_vacations),
+                    inline=False
+                )
+            
+            # 지난 휴가
+            if past_vacations:
+                embed.add_field(
+                    name="⚪ 지난 휴가",
+                    value="\n".join(past_vacations),
+                    inline=False
+                )
+            
+            await ctx.send(embed=embed)
+        
+        @self.bot.command()
         async def help_verification(ctx):
             """인증 봇 도움말을 표시합니다"""
             embed = discord.Embed(
@@ -271,13 +409,26 @@ class CommandHandler:
                 inline=False
             )
             
+            # 휴가 명령어 추가
+            embed.add_field(
+                name="🔹 휴가 명령어",
+                value="`!vacation` - 당일 휴가 등록\n"
+                      "`!vacation YYYY-MM-DD` - 특정 날짜 휴가 등록\n"
+                      "`!vacation YYYY-MM-DD YYYY-MM-DD` - 기간 휴가 등록\n"
+                      "`!cancel_vacation` - 등록된 휴가 취소\n"
+                      "`!my_vacation` - 내 휴가 정보 확인\n"
+                      "채널에 '휴가 YYYY-MM-DD' 형식으로 작성해도 등록됩니다.",
+                inline=False
+            )
+            
             # 관리자 명령어
             embed.add_field(
                 name="🔹 관리자 명령어",
                 value="`!test_check` - 인증 체크 즉시 테스트\n"
                       "`!check_now` - 즉시 인증 체크 실행\n"
                       "`!toggle_holiday_check` - 공휴일 체크 기능 켜기/끄기\n"
-                      "`!reload_holidays` - 공휴일 목록 다시 로드",
+                      "`!reload_holidays` - 공휴일 목록 다시 로드\n"
+                      "`!list_vacations` - 모든 휴가 목록 확인",
                 inline=False
             )
             

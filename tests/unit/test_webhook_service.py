@@ -79,16 +79,27 @@ async def test_send_webhook_rate_limit(webhook_service):
     # 원래 메서드 백업
     original_method = webhook_service.send_webhook
     
-    # 첫 번째 호출은 False, 두 번째 호출은 True 반환하도록 설정
-    webhook_service.send_webhook = AsyncMock(side_effect=[False, True])
+    # 첫 번째 호출은 429 응답, 두 번째 호출은 200 응답 모킹
+    response1 = AsyncMock()
+    response1.status = 429
+    
+    # headers 모킹
+    mock_headers = {"Retry-After": "5"}  # 문자열로 설정
+    response1.headers = mock_headers
+    response1.__aenter__.return_value = response1
+    
+    response2 = AsyncMock()
+    response2.status = 200
+    response2.__aenter__.return_value = response2
+    
+    webhook_service.session.post.side_effect = [response1, response2]
     
     # 테스트 실행
     webhook_data = {"test": "data"}
     result = await webhook_service.send_webhook(webhook_data)
     
-    # 검증 - 두 번째 호출에서 True를 반환
-    assert result is True
-    webhook_service.send_webhook.assert_called_with(webhook_data)
+    # 검증 - 실제 구현에 맞게 확인
+    assert result is True  # 최종적으로 성공
     
     # 원래 메서드 복원
     webhook_service.send_webhook = original_method 
