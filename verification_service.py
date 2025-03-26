@@ -17,6 +17,7 @@ class VerificationService:
         self.message_util = message_util
         self.time_util = time_util
         self.webhook_service = webhook_service
+        self._check_in_progress = False
     
     async def get_verification_data(
         self,
@@ -117,7 +118,12 @@ class VerificationService:
     
     async def check_daily_verification(self):
         """일일 인증 체크"""
+        if self._check_in_progress:
+            logger.warning("Verification check is already in progress")
+            return
+            
         try:
+            self._check_in_progress = True
             current_time = self.time_util.now()
             current_date = current_time.date()
             
@@ -163,12 +169,18 @@ class VerificationService:
         except Exception as e:
             logger.error(f"Error during verification check: {str(e)}", exc_info=True)
         finally:
+            self._check_in_progress = False
             if 'verified_users' in locals():
                 verified_users.clear()
     
     async def check_yesterday_verification(self):
         """전일 인증 체크"""
+        if self._check_in_progress:
+            logger.warning("Verification check is already in progress")
+            return
+            
         try:
+            self._check_in_progress = True
             current_time = self.time_util.now()
             current_weekday = current_time.weekday()
             
@@ -223,5 +235,6 @@ class VerificationService:
         except Exception as e:
             logger.error(f"Error during previous day verification check: {str(e)}", exc_info=True)
         finally:
+            self._check_in_progress = False
             if 'verified_users' in locals():
                 verified_users.clear() 
