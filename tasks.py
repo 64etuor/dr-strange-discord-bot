@@ -8,18 +8,30 @@ import logging
 logger = logging.getLogger('verification_bot')
 
 class TaskManager:
-    """태스크 관리 클래스"""
+    """태스크 관리 클래스 (싱글톤)"""
+    _instance = None
     
-    def __init__(self, bot, config, verification_service):
-        self.bot = bot
-        self.config = config
-        self.verification_service = verification_service
-        self.daily_check_task = None
-        self.yesterday_check_task = None
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(TaskManager, cls).__new__(cls)
+        return cls._instance
+    
+    def __init__(self, bot=None, config=None, verification_service=None):
+        if not hasattr(self, 'initialized'):
+            self.bot = bot
+            self.config = config
+            self.verification_service = verification_service
+            self.daily_check_task = None
+            self.yesterday_check_task = None
+            self._tasks_started = False
+            self.initialized = True
     
     def setup_tasks(self):
         """태스크 설정"""
-        
+        if self._tasks_started:
+            logger.warning("Tasks are already set up and running")
+            return
+            
         @tasks.loop(time=datetime.time(
             hour=self.config.UTC_DAILY_CHECK_HOUR,
             minute=self.config.DAILY_CHECK_MINUTE,
@@ -52,7 +64,12 @@ class TaskManager:
     
     def start_tasks(self):
         """태스크 시작"""
+        if self._tasks_started:
+            logger.warning("Tasks are already running")
+            return
+            
         if self.daily_check_task and self.yesterday_check_task:
             self.daily_check_task.start()
             self.yesterday_check_task.start()
+            self._tasks_started = True
             logger.info("All tasks started") 
