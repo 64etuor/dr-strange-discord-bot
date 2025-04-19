@@ -1,14 +1,40 @@
+# Discord Bot Configuration
+bot:
+  prefix: "!"
+  intents:
+    message_content: true
+    guilds: true
+    reactions: true
+    members: true
+
+# Environment Variables References
+env:
+  token_var: "DISCORD_TOKEN" # 환경 변수에서 봇 토큰
+  verification_channel_id_var: "VERIFICATION_CHANNEL_ID" # 인증 채널 ID
+  webhook_url_var: "WEBHOOK_URL" # 웹훅 URL
+
+# Message Limits
 message_limits:
   max_length: 1900
   max_attachment_size: 8388608 # 8MB
   history_limit: 1000
+
+# Retry Configuration
 retry:
   max_attempts: 3
   webhook_timeout: 10
+
+# Verification Configuration
 verification:
   keywords:
     - 인증사진
     - 인증 사진
+    - 샤따
+    - 샷다운
+    - 인증
+    - 사진
+
+# Time Configuration
 time:
   timezone: Asia/Seoul
   daily_check_hour: 22
@@ -28,9 +54,13 @@ time:
     - 금
     - 토
     - 일
+
+# Holidays Configuration
 holidays:
   file: holidays.csv
   skip: true
+
+# Message Templates
 messages:
   verification_success: "{name}, Your time has been recorded. The bill comes due. Always!"
   verification_error: "Verification Error occurred. Please try again."
@@ -41,3 +71,9 @@ messages:
   all_verified: "🎉 모든 멤버가 인증을 완료했네요!\n💪 여러분의 꾸준한 노력이 멋져요. 내일도 힘내세요! 💫"
   permission_error: "❌ 관리자만 사용할 수 있는 명령어입니다."
   bot_permission_error: "Bot doesn't have permission to add reactions."
+
+# Logging Configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: null # 파일로 로그를 저장하려면 경로 지정 (예: 'logs/bot.log')

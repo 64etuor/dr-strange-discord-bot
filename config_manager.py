@@ -16,17 +16,33 @@ class ConfigManager:
     """설정 관리 클래스"""
     
     def __init__(self, config_file="config.yaml"):
-        # 기본 설정 로드
+        # 환경 변수 로드
         self.load_dotenv()
+        
+        # 기본 설정 로드
         self.load_config(config_file)
         self.load_holidays()
         
     def load_dotenv(self):
         """환경 변수 로드"""
         load_dotenv()
+        
+        # .env 파일에서 중요 정보 로드
+        self._load_sensitive_data()
+    
+    def _load_sensitive_data(self):
+        """중요 정보 환경 변수에서 로드"""
+        # 기본 중요 정보
         self.TOKEN = os.getenv('DISCORD_TOKEN')
         self.VERIFICATION_CHANNEL_ID = int(os.getenv('VERIFICATION_CHANNEL_ID', '0'))
-        self.WEBHOOK_URL = os.getenv('WEBHOOK_URL', 'https://koreahub.us/webhook/discord')
+        self.WEBHOOK_URL = os.getenv('WEBHOOK_URL', '')
+        
+        # 추가적인 데이터베이스 정보 (필요한 경우)
+        self.DB_HOST = os.getenv('DB_HOST', '')
+        self.DB_PORT = os.getenv('DB_PORT', '')
+        self.DB_NAME = os.getenv('DB_NAME', '')
+        self.DB_USER = os.getenv('DB_USER', '')
+        self.DB_PASSWORD = os.getenv('DB_PASSWORD', '')
     
     def load_config(self, config_file):
         """YAML 설정 파일 로드 (없으면 기본값 사용)"""
@@ -44,6 +60,31 @@ class ConfigManager:
     
     def _set_config_values(self, config):
         """설정 값 적용"""
+        # 봇 설정
+        bot_config = config.get('bot', {})
+        self.BOT_PREFIX = bot_config.get('prefix', '!')
+        self.BOT_INTENTS = bot_config.get('intents', {
+            'message_content': True,
+            'guilds': True,
+            'reactions': True,
+            'members': True
+        })
+        
+        # 환경 변수 참조 (참조값이 변경된 경우)
+        env_config = config.get('env', {})
+        token_var = env_config.get('token_var', 'DISCORD_TOKEN')
+        verification_channel_id_var = env_config.get('verification_channel_id_var', 'VERIFICATION_CHANNEL_ID')
+        webhook_url_var = env_config.get('webhook_url_var', 'WEBHOOK_URL')
+        
+        # 환경 변수가 config.yaml에서 변경되었다면 새로운 환경 변수 값 로드
+        if token_var != 'DISCORD_TOKEN':
+            self.TOKEN = os.getenv(token_var, self.TOKEN)
+        if verification_channel_id_var != 'VERIFICATION_CHANNEL_ID':
+            channel_id = os.getenv(verification_channel_id_var, '0')
+            self.VERIFICATION_CHANNEL_ID = int(channel_id)
+        if webhook_url_var != 'WEBHOOK_URL':
+            self.WEBHOOK_URL = os.getenv(webhook_url_var, self.WEBHOOK_URL)
+        
         # 메시지 제한
         self.MAX_MESSAGE_LENGTH = config.get('message_limits', {}).get('max_length', 1900)
         self.MAX_ATTACHMENT_SIZE = config.get('message_limits', {}).get('max_attachment_size', 8 * 1024 * 1024)
@@ -85,9 +126,24 @@ class ConfigManager:
         
         # 메시지 템플릿
         self.MESSAGES = config.get('messages', self._get_default_messages())
+        
+        # 로깅 설정
+        logging_config = config.get('logging', {})
+        self.LOGGING_LEVEL = logging_config.get('level', 'INFO')
+        self.LOGGING_FORMAT = logging_config.get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        self.LOGGING_FILE = logging_config.get('file', None)
     
     def _set_default_config(self):
         """기본 설정값 설정"""
+        # 봇 설정
+        self.BOT_PREFIX = '!'
+        self.BOT_INTENTS = {
+            'message_content': True,
+            'guilds': True,
+            'reactions': True,
+            'members': True
+        }
+        
         # 메시지 제한
         self.MAX_MESSAGE_LENGTH = 1900
         self.MAX_ATTACHMENT_SIZE = 8 * 1024 * 1024
@@ -98,7 +154,7 @@ class ConfigManager:
         self.WEBHOOK_TIMEOUT = 10
         
         # 인증 키워드
-        self.VERIFICATION_KEYWORDS = ["인증사진", "인증 사진"]
+        self.VERIFICATION_KEYWORDS = ["인증사진", "인증 사진", "샤따", "샷다운", "인증", "사진"]
         
         # 시간 설정
         self.TIMEZONE = pytz.timezone('Asia/Seoul')
@@ -127,6 +183,11 @@ class ConfigManager:
         
         # 메시지 템플릿
         self.MESSAGES = self._get_default_messages()
+        
+        # 로깅 설정
+        self.LOGGING_LEVEL = 'INFO'
+        self.LOGGING_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        self.LOGGING_FILE = None
     
     def _get_default_messages(self):
         """기본 메시지 템플릿"""
@@ -148,6 +209,15 @@ class ConfigManager:
         """기본 설정을 YAML 파일로 저장"""
         try:
             config = {
+                'bot': {
+                    'prefix': self.BOT_PREFIX,
+                    'intents': self.BOT_INTENTS
+                },
+                'env': {
+                    'token_var': 'DISCORD_TOKEN',
+                    'verification_channel_id_var': 'VERIFICATION_CHANNEL_ID',
+                    'webhook_url_var': 'WEBHOOK_URL'
+                },
                 'message_limits': {
                     'max_length': self.MAX_MESSAGE_LENGTH,
                     'max_attachment_size': self.MAX_ATTACHMENT_SIZE,
@@ -177,7 +247,12 @@ class ConfigManager:
                     'file': self.HOLIDAYS_FILE,
                     'skip': self.SKIP_HOLIDAYS
                 },
-                'messages': self.MESSAGES
+                'messages': self.MESSAGES,
+                'logging': {
+                    'level': self.LOGGING_LEVEL,
+                    'format': self.LOGGING_FORMAT,
+                    'file': self.LOGGING_FILE
+                }
             }
             
             with open(config_file, 'w', encoding='utf-8') as f:
