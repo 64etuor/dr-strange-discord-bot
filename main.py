@@ -7,11 +7,7 @@ import os
 from config_manager import ConfigManager
 from bot import VerificationBot
 
-# 기본 로깅 설정 (설정 파일 로드 전)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# We'll get the logger but not configure it globally
 logger = logging.getLogger('verification_bot')
 
 def configure_logging(config):

@@ -11,12 +11,13 @@ logger = logging.getLogger('verification_bot')
 class VerificationService:
     """인증 관련 서비스 클래스"""
     
-    def __init__(self, config, bot, message_util, time_util, webhook_service):
+    def __init__(self, config, bot, message_util, time_util, webhook_service, vacation_service=None):
         self.config = config
         self.bot = bot
         self.message_util = message_util
         self.time_util = time_util
         self.webhook_service = webhook_service
+        self.vacation_service = vacation_service
         self._check_in_progress = False
     
     async def get_verification_data(
@@ -282,122 +283,113 @@ class VerificationService:
     async def check_daily_verification(self):
         """일일 인증 체크"""
         if self._check_in_progress:
-            logger.warning("Verification check is already in progress")
+            logger.warning("이미 인증 체크가 진행 중입니다.")
             return
             
+        self._check_in_progress = True
+        logger.info("일일 인증 체크 시작")
+        
         try:
-            self._check_in_progress = True
-            current_time = self.time_util.now()
-            current_date = current_time.date()
-            
-            # 주말이나 공휴일인 경우 체크 건너뛰기
-            if self.time_util.should_skip_check(current_time):
-                reason = "weekend" if self.time_util.is_weekend(current_time.weekday()) else "holiday"
-                logger.info(f"Skipping daily check - it's a {reason} ({current_date})")
+            # 현재 날짜가 체크를 건너뛰어야 하는 날짜인지 확인
+            now = self.time_util.now()
+            if self.time_util.should_skip_check(now):
+                reason = "주말" if self.time_util.is_weekend(now.weekday()) else "공휴일"
+                logger.info(f"일일 인증 체크 건너뜀 ({reason})")
                 return
                 
-            logger.info(f"Starting daily verification check (KST): {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
-
-            # 채널 확인
+            # 인증 채널 가져오기
             channel = self.bot.get_channel(self.config.VERIFICATION_CHANNEL_ID)
-            if not channel or not isinstance(channel, discord.TextChannel):
-                logger.error(f"Channel check failed: {self.config.VERIFICATION_CHANNEL_ID}")
+            if not channel:
+                logger.error(f"인증 채널을 찾을 수 없음: {self.config.VERIFICATION_CHANNEL_ID}")
                 return
-
-            logger.info(f"Channel check successful: {channel.name}")
-
-            # 권한 확인
-            permissions = channel.permissions_for(channel.guild.me)
-            if not all([permissions.read_message_history, permissions.view_channel, permissions.send_messages]):
-                logger.error("Missing required permissions")
-                return
-
-            # 날짜 범위 설정
-            today_start, today_end = self.time_util.get_today_range()
-
+                
+            # 체크 기간 계산
+            start_time, end_time = self.time_util.get_today_range()
+            
             # 인증 데이터 가져오기
-            verified_users, unverified_members = await self.get_verification_data(
-                channel, today_start, today_end
-            )
-
-            # 미인증 멤버 메시지 전송
+            verified_users, unverified_members = await self.get_verification_data(channel, start_time, end_time)
+            
+            # 휴가 사용자 필터링 (휴가 서비스가 있는 경우)
+            if self.vacation_service:
+                filtered_members = []
+                for member in unverified_members:
+                    if not self.vacation_service.is_user_on_vacation(member.id):
+                        filtered_members.append(member)
+                
+                if len(filtered_members) != len(unverified_members):
+                    logger.info(f"{len(unverified_members) - len(filtered_members)}명이 휴가로 인해 인증 체크에서 제외됨")
+                unverified_members = filtered_members
+            
+            # 결과 출력
+            logger.info(f"인증 완료: {len(verified_users)}명, 미완료: {len(unverified_members)}명")
+            
+            # 인증되지 않은 멤버에게 메시지 전송
             await self.send_unverified_messages(
-                channel, unverified_members, self.config.MESSAGES['unverified_daily']
+                channel,
+                unverified_members,
+                self.config.MESSAGES['daily_check']
             )
-
-            # 처리 결과 로깅
-            logger.info(f"Number of unverified members: {len(unverified_members)}")
-            logger.info("Daily verification check completed")
-
+            
         except Exception as e:
-            logger.error(f"Error during verification check: {str(e)}", exc_info=True)
+            logger.error(f"일일 인증 체크 중 오류: {e}", exc_info=True)
         finally:
             self._check_in_progress = False
-            if 'verified_users' in locals():
-                verified_users.clear()
-    
+            logger.info("일일 인증 체크 완료")
+            
     async def check_yesterday_verification(self):
         """전일 인증 체크"""
         if self._check_in_progress:
-            logger.warning("Verification check is already in progress")
+            logger.warning("이미 인증 체크가 진행 중입니다.")
             return
             
+        self._check_in_progress = True
+        logger.info("전일 인증 체크 시작")
+        
         try:
-            self._check_in_progress = True
-            current_time = self.time_util.now()
-            current_weekday = current_time.weekday()
+            # 전일 날짜 계산
+            yesterday = self.time_util.now() - datetime.timedelta(days=1)
             
-            # 오늘이 주말이나 공휴일인 경우 체크 건너뛰기
-            if self.time_util.should_skip_check(current_time):
-                reason = "weekend" if self.time_util.is_weekend(current_time.weekday()) else "holiday"
-                logger.info(f"Skipping yesterday check - today is a {reason} ({current_time.date()})")
-                return
-            
-            # 월요일이면 금요일 체크
-            if current_weekday == 0:
-                check_date = current_time - datetime.timedelta(days=3)
-                logger.info(f"Monday: Checking Friday's verification")
-            else:
-                check_date = current_time - datetime.timedelta(days=1)
-                
-            # 체크하는 날짜가 주말이나 공휴일인 경우 체크 건너뛰기
-            if self.time_util.should_skip_check(check_date):
-                reason = "weekend" if self.time_util.is_weekend(check_date.weekday()) else "holiday"
-                logger.info(f"Skipping yesterday check - the target date is a {reason} ({check_date.date()})")
+            # 어제가 체크를 건너뛰어야 하는 날짜인지 확인
+            if self.time_util.should_skip_check(yesterday):
+                reason = "주말" if self.time_util.is_weekend(yesterday.weekday()) else "공휴일"
+                logger.info(f"전일 인증 체크 건너뜀 ({reason})")
                 return
                 
-            logger.info(f"Starting verification check for {check_date.strftime('%Y-%m-%d')} (KST)")
-
-            # 채널 확인
+            # 인증 채널 가져오기
             channel = self.bot.get_channel(self.config.VERIFICATION_CHANNEL_ID)
-            if not channel or not isinstance(channel, discord.TextChannel):
-                logger.error(f"Channel check failed: {self.config.VERIFICATION_CHANNEL_ID}")
+            if not channel:
+                logger.error(f"인증 채널을 찾을 수 없음: {self.config.VERIFICATION_CHANNEL_ID}")
                 return
-
-            # 날짜 범위 설정
-            check_start, check_end = self.time_util.get_check_date_range(check_date)
-
+                
+            # 체크 기간 계산 (전일)
+            start_time, end_time = self.time_util.get_check_date_range(yesterday)
+            
             # 인증 데이터 가져오기
-            verified_users, unverified_members = await self.get_verification_data(
-                channel, check_start, check_end
-            )
-
-            # 미인증 멤버 메시지 전송
-            message_template = (
-                self.config.MESSAGES['unverified_friday'] if current_weekday == 0
-                else self.config.MESSAGES['unverified_yesterday']
-            )
+            verified_users, unverified_members = await self.get_verification_data(channel, start_time, end_time)
+            
+            # 휴가 사용자 필터링 (휴가 서비스가 있는 경우)
+            if self.vacation_service:
+                filtered_members = []
+                for member in unverified_members:
+                    if not self.vacation_service.is_user_on_vacation(member.id, yesterday.date()):
+                        filtered_members.append(member)
+                
+                if len(filtered_members) != len(unverified_members):
+                    logger.info(f"{len(unverified_members) - len(filtered_members)}명이 휴가로 인해 인증 체크에서 제외됨")
+                unverified_members = filtered_members
+            
+            # 결과 출력
+            logger.info(f"전일 인증 완료: {len(verified_users)}명, 미완료: {len(unverified_members)}명")
+            
+            # 인증되지 않은 멤버에게 메시지 전송
             await self.send_unverified_messages(
-                channel, unverified_members, message_template
+                channel,
+                unverified_members,
+                self.config.MESSAGES['yesterday_check']
             )
-
-            # 처리 결과 로깅
-            logger.info(f"Number of unverified members from previous day: {len(unverified_members)}")
-            logger.info("Previous day verification check completed")
-
+            
         except Exception as e:
-            logger.error(f"Error during previous day verification check: {str(e)}", exc_info=True)
+            logger.error(f"전일 인증 체크 중 오류: {e}", exc_info=True)
         finally:
             self._check_in_progress = False
-            if 'verified_users' in locals():
-                verified_users.clear() 
+            logger.info("전일 인증 체크 완료") 

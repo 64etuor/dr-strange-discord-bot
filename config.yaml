@@ -65,12 +65,17 @@ messages:
   verification_success: "{name}, Your time has been recorded. The bill comes due. Always!"
   verification_error: "Verification Error occurred. Please try again."
   attach_image_request: "Please attach an image."
-  unverified_daily: "⚠️ 아직 오늘의 인증을 하지 않은 멤버들이에요:\n{members}\n자정까지 2시간 남았어요! 오늘의 기록 인증을 올리는 것 잊지 마세요! 💪"
-  unverified_yesterday: "⚠️ 어제 인증을 하지 않은 멤버(들)입니다:\n{members}\n벌칙을 수행해 주세요!"
-  unverified_friday: "⚠️ 지난 주 금요일 인증을 하지 않은 멤버(들)입니다:\n{members}\n벌칙을 수행해 주세요!"
+  daily_check: "⚠️ 아직 오늘의 인증을 하지 않은 멤버들이에요:\n{members}\n자정까지 2시간 남았어요! 오늘의 기록 인증을 올리는 것 잊지 마세요! 💪"
+  yesterday_check: "⚠️ 어제 인증을 하지 않은 멤버(들)입니다:\n{members}\n벌칙을 수행해 주세요!"
   all_verified: "🎉 모든 멤버가 인증을 완료했네요!\n💪 여러분의 꾸준한 노력이 멋져요. 내일도 힘내세요! 💫"
   permission_error: "❌ 관리자만 사용할 수 있는 명령어입니다."
   bot_permission_error: "Bot doesn't have permission to add reactions."
+  vacation_registered: "🏖️ {date} 날짜가 휴가로 등록되었습니다. 해당 날짜에는 인증 체크에서 제외됩니다."
+  vacation_already_registered: "⚠️ {date} 날짜는 이미 휴가로 등록되어 있습니다."
+  vacation_future_only: "❌ 과거 날짜는 휴가로 등록할 수 없습니다."
+  vacation_invalid_format: "❌ 날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식으로 입력해주세요."
+  vacation_all_canceled: "✅ 모든 휴가({count}개)가 취소되었습니다."
+  vacation_none_registered: "ℹ️ 등록된 휴가가 없습니다."
 
 # Logging Configuration
 logging:

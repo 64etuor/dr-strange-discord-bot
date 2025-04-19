@@ -7,10 +7,16 @@ import datetime
 import asyncio
 import logging
 
+# Disable discord.py's default logging handler to prevent duplicate logs
+discord_logger = logging.getLogger('discord')
+discord_logger.setLevel(logging.INFO)
+discord_logger.handlers = []
+
 from message_utils import MessageUtility
 from time_utils import TimeUtility
 from webhook_service import WebhookService
 from verification_service import VerificationService
+from vacation_service import VacationService
 from tasks import TaskManager
 from commands import CommandHandler
 
@@ -44,8 +50,10 @@ class VerificationBot:
         
         # 서비스 초기화
         self.webhook_service = WebhookService(self.config)
+        self.vacation_service = VacationService(self.config, self.time_util)
         self.verification_service = VerificationService(
-            self.config, self.bot, self.message_util, self.time_util, self.webhook_service
+            self.config, self.bot, self.message_util, self.time_util, self.webhook_service,
+            self.vacation_service
         )
         
         # 태스크 관리자 초기화
@@ -53,7 +61,8 @@ class VerificationBot:
         
         # 명령어 핸들러 초기화
         self.command_handler = CommandHandler(
-            self.bot, self.config, self.verification_service, self.task_manager, self.time_util
+            self.bot, self.config, self.verification_service, self.task_manager, 
+            self.time_util, self.vacation_service
         )
         
         # 이벤트 핸들러 등록
@@ -102,6 +111,9 @@ class VerificationBot:
     async def _sync_commands(self):
         """슬래시 명령어 동기화"""
         try:
+            # 먼저 Cog를 추가
+            await self.command_handler.add_cogs_if_needed()
+            
             logger.info("슬래시 명령어 동기화 시작...")
             synced = await self.bot.tree.sync()
             logger.info(f"{len(synced)} 개의 슬래시 명령어 동기화 완료")
@@ -127,9 +139,16 @@ class VerificationBot:
         except Exception as e:
             logger.error(f"Bot error: {str(e)}", exc_info=True)
         finally:
-            # 비동기 정리 함수를 동기적으로 호출
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(self.webhook_service.cleanup())
-            else:
-                loop.run_until_complete(self.webhook_service.cleanup()) 
+            # 봇 종료 시 정리 작업 수행
+            try:
+                # 안전하게 웹훅 서비스 정리
+                if hasattr(self, 'webhook_service'):
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        loop.run_until_complete(self.webhook_service.cleanup())
+                        loop.close()
+                    except Exception as e:
+                        logger.error(f"웹훅 서비스 정리 중 오류: {e}", exc_info=True)
+            except Exception as e:
+                logger.error(f"종료 처리 중 오류: {e}", exc_info=True) 

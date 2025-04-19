@@ -135,125 +135,115 @@ class ConfigManager:
     
     def _set_default_config(self):
         """기본 설정값 설정"""
+        defaults = self._get_default_config()
+        
         # 봇 설정
-        self.BOT_PREFIX = '!'
-        self.BOT_INTENTS = {
-            'message_content': True,
-            'guilds': True,
-            'reactions': True,
-            'members': True
-        }
+        self.BOT_PREFIX = defaults['bot']['prefix']
+        self.BOT_INTENTS = defaults['bot']['intents']
         
         # 메시지 제한
-        self.MAX_MESSAGE_LENGTH = 1900
-        self.MAX_ATTACHMENT_SIZE = 8 * 1024 * 1024
-        self.MESSAGE_HISTORY_LIMIT = 1000
+        self.MAX_MESSAGE_LENGTH = defaults['message_limits']['max_length']
+        self.MAX_ATTACHMENT_SIZE = defaults['message_limits']['max_attachment_size']
+        self.MESSAGE_HISTORY_LIMIT = defaults['message_limits']['history_limit']
         
         # 재시도 설정
-        self.MAX_RETRY_ATTEMPTS = 3
-        self.WEBHOOK_TIMEOUT = 10
+        self.MAX_RETRY_ATTEMPTS = defaults['retry']['max_attempts']
+        self.WEBHOOK_TIMEOUT = defaults['retry']['webhook_timeout']
         
         # 인증 키워드
-        self.VERIFICATION_KEYWORDS = ["인증사진", "인증 사진", "샤따", "샷다운", "인증", "사진"]
+        self.VERIFICATION_KEYWORDS = defaults['verification']['keywords']
         
         # 시간 설정
-        self.TIMEZONE = pytz.timezone('Asia/Seoul')
+        self.TIMEZONE = pytz.timezone(defaults['time']['timezone'])
         
-        self.DAILY_CHECK_HOUR = 22
-        self.DAILY_CHECK_MINUTE = 0
-        self.YESTERDAY_CHECK_HOUR = 9
-        self.YESTERDAY_CHECK_MINUTE = 0
+        self.DAILY_CHECK_HOUR = defaults['time']['daily_check_hour']
+        self.DAILY_CHECK_MINUTE = defaults['time']['daily_check_minute']
+        self.YESTERDAY_CHECK_HOUR = defaults['time']['yesterday_check_hour']
+        self.YESTERDAY_CHECK_MINUTE = defaults['time']['yesterday_check_minute']
         
-        self.DAILY_START_HOUR = 12
-        self.DAILY_START_MINUTE = 0
-        self.DAILY_END_HOUR = 3
-        self.DAILY_END_MINUTE = 0
-        self.DAILY_END_SECOND = 0
+        self.DAILY_START_HOUR = defaults['time']['daily_start_hour']
+        self.DAILY_START_MINUTE = defaults['time']['daily_start_minute']
+        self.DAILY_END_HOUR = defaults['time']['daily_end_hour']
+        self.DAILY_END_MINUTE = defaults['time']['daily_end_minute']
+        self.DAILY_END_SECOND = defaults['time']['daily_end_second']
         
         # UTC 시간 계산
         self.UTC_DAILY_CHECK_HOUR = (self.DAILY_CHECK_HOUR - 9) % 24
         self.UTC_YESTERDAY_CHECK_HOUR = (self.YESTERDAY_CHECK_HOUR - 9) % 24
         
         # 요일 이름
-        self.WEEKDAY_NAMES = ['월', '화', '수', '목', '금', '토', '일']
+        self.WEEKDAY_NAMES = defaults['time']['weekday_names']
         
         # 공휴일 설정
-        self.HOLIDAYS_FILE = 'holidays.csv'
-        self.SKIP_HOLIDAYS = True
+        self.HOLIDAYS_FILE = defaults['holidays']['file']
+        self.SKIP_HOLIDAYS = defaults['holidays']['skip']
         
         # 메시지 템플릿
-        self.MESSAGES = self._get_default_messages()
+        self.MESSAGES = defaults['messages']
         
         # 로깅 설정
-        self.LOGGING_LEVEL = 'INFO'
-        self.LOGGING_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        self.LOGGING_FILE = None
+        self.LOGGING_LEVEL = defaults['logging']['level']
+        self.LOGGING_FORMAT = defaults['logging']['format']
+        self.LOGGING_FILE = defaults['logging']['file']
     
-    def _get_default_messages(self):
-        """기본 메시지 템플릿"""
+    def _get_default_config(self):
+        """기본 설정값을 딕셔너리로 반환"""
         return {
-            'verification_success': "{name}, Your time has been recorded. The bill comes due. Always!",
-            'verification_error': "Verification Error occurred. Please try again.",
-            'attach_image_request': "Please attach an image.",
-            'unverified_daily': ("⚠️ 아직 오늘의 인증을 하지 않은 멤버들이에요:\n{members}\n"
-                              "자정까지 2시간 남았어요! 오늘의 기록 인증을 올리는 것 잊지 마세요! 💪"),
-            'unverified_yesterday': "⚠️ 어제 인증을 하지 않은 멤버(들)입니다:\n{members}\n벌칙을 수행해 주세요!",
-            'unverified_friday': "⚠️ 지난 주 금요일 인증을 하지 않은 멤버(들)입니다:\n{members}\n벌칙을 수행해 주세요!",
-            'all_verified': ("🎉 모든 멤버가 인증을 완료했네요!\n"
-                           "💪 여러분의 꾸준한 노력이 멋져요. 내일도 힘내세요! 💫"),
-            'permission_error': "❌ 관리자만 사용할 수 있는 명령어입니다.",
-            'bot_permission_error': "Bot doesn't have permission to add reactions."
+            'bot': {
+                'prefix': '!',
+                'intents': {
+                    'message_content': True,
+                    'guilds': True,
+                    'reactions': True,
+                    'members': True
+                }
+            },
+            'env': {
+                'token_var': 'DISCORD_TOKEN',
+                'verification_channel_id_var': 'VERIFICATION_CHANNEL_ID',
+                'webhook_url_var': 'WEBHOOK_URL'
+            },
+            'message_limits': {
+                'max_length': 1900,
+                'max_attachment_size': 8 * 1024 * 1024,
+                'history_limit': 1000
+            },
+            'retry': {
+                'max_attempts': 3,
+                'webhook_timeout': 10
+            },
+            'verification': {
+                'keywords': ["인증사진", "인증 사진", "샤따", "샷다운", "인증", "사진"]
+            },
+            'time': {
+                'timezone': 'Asia/Seoul',
+                'daily_check_hour': 22,
+                'daily_check_minute': 0,
+                'yesterday_check_hour': 9,
+                'yesterday_check_minute': 0,
+                'daily_start_hour': 12,
+                'daily_start_minute': 0,
+                'daily_end_hour': 3,
+                'daily_end_minute': 0,
+                'daily_end_second': 0,
+                'weekday_names': ['월', '화', '수', '목', '금', '토', '일']
+            },
+            'holidays': {
+                'file': 'holidays.csv',
+                'skip': True
+            },
+            'messages': self._get_default_messages(),
+            'logging': {
+                'level': 'INFO',
+                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                'file': None
+            }
         }
     
     def _save_default_config(self, config_file):
         """기본 설정을 YAML 파일로 저장"""
         try:
-            config = {
-                'bot': {
-                    'prefix': self.BOT_PREFIX,
-                    'intents': self.BOT_INTENTS
-                },
-                'env': {
-                    'token_var': 'DISCORD_TOKEN',
-                    'verification_channel_id_var': 'VERIFICATION_CHANNEL_ID',
-                    'webhook_url_var': 'WEBHOOK_URL'
-                },
-                'message_limits': {
-                    'max_length': self.MAX_MESSAGE_LENGTH,
-                    'max_attachment_size': self.MAX_ATTACHMENT_SIZE,
-                    'history_limit': self.MESSAGE_HISTORY_LIMIT
-                },
-                'retry': {
-                    'max_attempts': self.MAX_RETRY_ATTEMPTS,
-                    'webhook_timeout': self.WEBHOOK_TIMEOUT
-                },
-                'verification': {
-                    'keywords': self.VERIFICATION_KEYWORDS
-                },
-                'time': {
-                    'timezone': 'Asia/Seoul',
-                    'daily_check_hour': self.DAILY_CHECK_HOUR,
-                    'daily_check_minute': self.DAILY_CHECK_MINUTE,
-                    'yesterday_check_hour': self.YESTERDAY_CHECK_HOUR,
-                    'yesterday_check_minute': self.YESTERDAY_CHECK_MINUTE,
-                    'daily_start_hour': self.DAILY_START_HOUR,
-                    'daily_start_minute': self.DAILY_START_MINUTE,
-                    'daily_end_hour': self.DAILY_END_HOUR,
-                    'daily_end_minute': self.DAILY_END_MINUTE,
-                    'daily_end_second': self.DAILY_END_SECOND,
-                    'weekday_names': self.WEEKDAY_NAMES
-                },
-                'holidays': {
-                    'file': self.HOLIDAYS_FILE,
-                    'skip': self.SKIP_HOLIDAYS
-                },
-                'messages': self.MESSAGES,
-                'logging': {
-                    'level': self.LOGGING_LEVEL,
-                    'format': self.LOGGING_FORMAT,
-                    'file': self.LOGGING_FILE
-                }
-            }
+            config = self._get_default_config()
             
             with open(config_file, 'w', encoding='utf-8') as f:
                 yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
@@ -288,3 +278,24 @@ class ConfigManager:
         """주어진 날짜가 공휴일인지 확인"""
         date_str = date.strftime('%Y-%m-%d')
         return date_str in self.HOLIDAYS 
+
+    def _get_default_messages(self):
+        """기본 메시지 템플릿"""
+        return {
+            'verification_success': "{name}, Your time has been recorded. The bill comes due. Always!",
+            'verification_error': "Verification Error occurred. Please try again.",
+            'attach_image_request': "Please attach an image.",
+            'daily_check': ("⚠️ 아직 오늘의 인증을 하지 않은 멤버들이에요:\n{members}\n"
+                              "자정까지 2시간 남았어요! 오늘의 기록 인증을 올리는 것 잊지 마세요! 💪"),
+            'yesterday_check': "⚠️ 어제 인증을 하지 않은 멤버(들)입니다:\n{members}\n벌칙을 수행해 주세요!",
+            'all_verified': ("🎉 모든 멤버가 인증을 완료했네요!\n"
+                           "💪 여러분의 꾸준한 노력이 멋져요. 내일도 힘내세요! 💫"),
+            'permission_error': "❌ 관리자만 사용할 수 있는 명령어입니다.",
+            'bot_permission_error': "Bot doesn't have permission to add reactions.",
+            'vacation_registered': "🏖️ {date} 날짜가 휴가로 등록되었습니다. 해당 날짜에는 인증 체크에서 제외됩니다.",
+            'vacation_already_registered': "⚠️ {date} 날짜는 이미 휴가로 등록되어 있습니다.",
+            'vacation_future_only': "❌ 과거 날짜는 휴가로 등록할 수 없습니다.",
+            'vacation_invalid_format': "❌ 날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식으로 입력해주세요.",
+            'vacation_all_canceled': "✅ 모든 휴가({count}개)가 취소되었습니다.",
+            'vacation_none_registered': "ℹ️ 등록된 휴가가 없습니다."
+        } 
