@@ -256,15 +256,18 @@ class VerificationCommands(commands.Cog):
             inline=False
         )
         
-        # 남은 시간 계산
+        # 남은 시간 계산 - tzinfo 일관성 보장
         now_utc = datetime.datetime.now(datetime.timezone.utc)
-        daily_delta = daily_next - now_utc.replace(tzinfo=None)
-        yesterday_delta = yesterday_next - now_utc.replace(tzinfo=None)
+        daily_next_aware = daily_next.replace(tzinfo=datetime.timezone.utc)
+        yesterday_next_aware = yesterday_next.replace(tzinfo=datetime.timezone.utc)
         
-        daily_hours, remainder = divmod(int(daily_delta.total_seconds()), 3600)
+        daily_delta = (daily_next_aware - now_utc).total_seconds()
+        yesterday_delta = (yesterday_next_aware - now_utc).total_seconds()
+        
+        daily_hours, remainder = divmod(int(daily_delta), 3600)
         daily_minutes, daily_seconds = divmod(remainder, 60)
         
-        yesterday_hours, remainder = divmod(int(yesterday_delta.total_seconds()), 3600)
+        yesterday_hours, remainder = divmod(int(yesterday_delta), 3600)
         yesterday_minutes, yesterday_seconds = divmod(remainder, 60)
         
         embed.add_field(
@@ -598,15 +601,18 @@ class StatusCommands(commands.Cog):
         daily_next_kst = daily_next.replace(tzinfo=datetime.timezone.utc).astimezone(self.config.TIMEZONE)
         yesterday_next_kst = yesterday_next.replace(tzinfo=datetime.timezone.utc).astimezone(self.config.TIMEZONE)
         
-        # 남은 시간 계산
+        # 남은 시간 계산 - tzinfo 일관성 보장
         now_utc = datetime.datetime.now(datetime.timezone.utc)
-        daily_delta = daily_next - now_utc.replace(tzinfo=None)
-        yesterday_delta = yesterday_next - now_utc.replace(tzinfo=None)
+        daily_next_aware = daily_next.replace(tzinfo=datetime.timezone.utc)
+        yesterday_next_aware = yesterday_next.replace(tzinfo=datetime.timezone.utc)
         
-        daily_hours, remainder = divmod(int(daily_delta.total_seconds()), 3600)
+        daily_delta = (daily_next_aware - now_utc).total_seconds()
+        yesterday_delta = (yesterday_next_aware - now_utc).total_seconds()
+        
+        daily_hours, remainder = divmod(int(daily_delta), 3600)
         daily_minutes, daily_seconds = divmod(remainder, 60)
         
-        yesterday_hours, remainder = divmod(int(yesterday_delta.total_seconds()), 3600)
+        yesterday_hours, remainder = divmod(int(yesterday_delta), 3600)
         yesterday_minutes, yesterday_seconds = divmod(remainder, 60)
         
         # 상태 정보 메시지 생성
@@ -673,7 +679,10 @@ class StatusCommands(commands.Cog):
                   "`/check_settings` - 현재 설정 확인\n"
                   "`/check_holidays` - 공휴일 목록 확인\n"
                   "`/status` - 봇 상태 정보 확인\n"
-                  "`/help` - 이 도움말 표시",
+                  "`/help` - 이 도움말 표시\n"
+                  "`/vacation` - 휴가 등록 (YYYY-MM-DD, 생략 시 오늘)\n"
+                  "`/cancel_vacation` - 모든 휴가 취소\n"
+                  "`/my_vacations` - 내 휴가 목록 확인",
             inline=False
         )
         
@@ -717,53 +726,142 @@ class StatusCommands(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
 
+class VacationCommands(commands.Cog):
+    """휴가 관련 명령어 Cog"""
+    
+    def __init__(self, bot, config, vacation_service, time_util):
+        self.bot = bot
+        self.config = config
+        self.vacation_service = vacation_service
+        self.time_util = time_util
+    
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """봇이 준비되었을 때 실행"""
+        logger.info("VacationCommands Cog loaded")
+        
+    async def _vacation_logic(self, interaction: discord.Interaction, date: Optional[str] = None):
+        """휴가 등록 로직"""
+        result = self.vacation_service.register_vacation(interaction.user.id, date)
+        
+        if "이미 휴가로 등록" in result:
+            color = discord.Color.yellow()
+            title = "⚠️ 이미 등록된 휴가"
+        elif "날짜 형식이 올바르지 않습니다" in result or "과거 날짜는 휴가로" in result:
+            color = discord.Color.red()
+            title = "❌ 휴가 등록 실패"
+        else:
+            color = discord.Color.green()
+            title = "🏖️ 휴가 등록 완료"
+        
+        embed = discord.Embed(title=title, description=result, color=color)
+        
+        vacations = self.vacation_service.get_user_vacations(interaction.user.id)
+        if vacations:
+            vacation_list = "\n".join([f"• {date}" for date in vacations])
+            embed.add_field(name="📅 등록된 휴가 목록", value=vacation_list, inline=False)
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="vacation", description="휴가 등록")
+    @app_commands.describe(date="휴가 날짜 (YYYY-MM-DD 형식, 생략 시 오늘)")
+    async def vacation(self, interaction: discord.Interaction, date: Optional[str] = None):
+        await self._vacation_logic(interaction, date)
+            
+    async def _cancel_vacation_logic(self, interaction: discord.Interaction):
+        """휴가 취소 로직"""
+        result = self.vacation_service.cancel_all_vacations(interaction.user.id)
+        
+        if "등록된 휴가가 없습니다" in result:
+            color = discord.Color.blue()
+            title = "ℹ️ 휴가 정보"
+        else:
+            color = discord.Color.green()
+            title = "✅ 휴가 취소 완료"
+        
+        embed = discord.Embed(title=title, description=result, color=color)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="cancel_vacation", description="모든 휴가 취소")
+    async def cancel_vacation(self, interaction: discord.Interaction):
+        await self._cancel_vacation_logic(interaction)
+            
+    async def _my_vacations_logic(self, interaction: discord.Interaction):
+        """내 휴가 목록 확인 로직"""
+        vacations = self.vacation_service.get_user_vacations(interaction.user.id)
+        
+        if not vacations:
+            embed = discord.Embed(title="📅 내 휴가 목록", description="등록된 휴가가 없습니다.", color=discord.Color.blue())
+        else:
+            vacation_list = "\n".join([f"• {date}" for date in vacations])
+            embed = discord.Embed(title="📅 내 휴가 목록", description=f"총 {len(vacations)}개의 휴가가 등록되어 있습니다.", color=discord.Color.green())
+            embed.add_field(name="등록된 날짜", value=vacation_list, inline=False)
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="my_vacations", description="내 휴가 목록 확인")
+    async def my_vacations(self, interaction: discord.Interaction):
+        await self._my_vacations_logic(interaction)
+
+
 class CommandSetup:
     """명령어 설정 클래스"""
     
-    def __init__(self, bot, config, verification_service, task_manager, time_util):
+    def __init__(self, bot, config, verification_service, task_manager, time_util, vacation_service):
         self.bot = bot
         self.config = config
         self.verification_service = verification_service
         self.task_manager = task_manager
         self.time_util = time_util
+        self.vacation_service = vacation_service
         
         # 기존 명령어 제거 (필요한 경우)
         self._remove_commands()
         
-        # 명령어 Cog 추가
-        self._add_cogs()
+        # 명령어 Cog 추가는 async가 필요하므로 on_ready에서 수행하도록 설정
+        self.add_cogs_done = False
     
     def _remove_commands(self):
         """기존 명령어 제거"""
         for command in list(self.bot.commands):
             self.bot.remove_command(command.name)
     
-    def _add_cogs(self):
-        """명령어 Cog 추가"""
+    async def add_cogs_if_needed(self):
+        """명령어 Cog 추가 (아직 추가되지 않은 경우)"""
+        if self.add_cogs_done:
+            return
+            
         # 검증 관련 명령어
         verification_commands = VerificationCommands(
             self.bot, self.config, self.verification_service, self.task_manager, self.time_util
         )
-        self.bot.add_cog(verification_commands)
+        await self.bot.add_cog(verification_commands)
         
         # 공휴일 관련 명령어
         holiday_commands = HolidayCommands(
             self.bot, self.config, self.time_util
         )
-        self.bot.add_cog(holiday_commands)
+        await self.bot.add_cog(holiday_commands)
         
         # 관리자 전용 명령어
         admin_commands = AdminCommands(
             self.bot, self.config, self.verification_service
         )
-        self.bot.add_cog(admin_commands)
+        await self.bot.add_cog(admin_commands)
         
         # 상태 확인 명령어
         status_commands = StatusCommands(
             self.bot, self.config, self.task_manager, self.time_util
         )
-        self.bot.add_cog(status_commands)
+        await self.bot.add_cog(status_commands)
         
+        # 휴가 관련 명령어
+        vacation_commands = VacationCommands(
+            self.bot, self.config, self.vacation_service, self.time_util
+        )
+        await self.bot.add_cog(vacation_commands)
+        
+        self.add_cogs_done = True
         logger.info("명령어 Cog 추가 완료")
 
 
