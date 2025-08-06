@@ -1,24 +1,32 @@
 """
 인증 관련 서비스 모듈
 """
-import logging
 import discord
 import datetime
 from typing import List, Set, Tuple
+from db import VerificationManager
+from logging_utils import get_logger
 
-logger = logging.getLogger('verification_bot')
+logger = get_logger()
 
 class VerificationService:
     """인증 관련 서비스 클래스"""
     
-    def __init__(self, config, bot, message_util, time_util, webhook_service, vacation_service=None):
+    def __init__(self, config, bot, message_util, time_util, webhook_service=None, vacation_service=None, verification_manager=None):
         self.config = config
         self.bot = bot
         self.message_util = message_util
         self.time_util = time_util
-        self.webhook_service = webhook_service
+        self.webhook_service = webhook_service  # 하위 호환성을 위해 유지
         self.vacation_service = vacation_service
         self._check_in_progress = False
+        
+        # ConfigManager에서 verification_manager를 전달받음
+        if verification_manager:
+            self.verification_manager = verification_manager
+            self.db_manager = verification_manager.db_manager
+        else:
+            raise ValueError("verification_manager가 필요합니다. ConfigManager에서 전달받아야 합니다.")
     
     async def get_verification_data(
         self,
@@ -31,7 +39,12 @@ class VerificationService:
         unverified_members: List[discord.Member] = []
         
         try:
-            # 메시지 히스토리에서 인증한 사용자 확인
+            # 데이터베이스에서 인증한 사용자 확인
+            verification_date = start_time.date()  # start_time에서 날짜 추출
+            db_verified_users = self.verification_manager.get_verified_users_on_date(verification_date)
+            verified_users = {int(user_id) for user_id in db_verified_users}  # str을 int로 변환
+            
+            # 메시지 히스토리도 추가로 확인 (백업용)
             async for message in channel.history(
                 after=start_time,
                 before=end_time,
@@ -93,17 +106,14 @@ class VerificationService:
             # 현재 시간 (KST) 가져오기
             current_time = self.time_util.now()
             
-            # 웹훅 데이터 준비
-            webhook_data = {
-                "author": message.author.name,
-                "author_id": str(message.author.id),
-                "content": message.content,
-                "image_urls": image_urls,
-                "sent_at": current_time.strftime('%Y-%m-%d %H:%M:%S')
-            }
-
-            # 웹훅 전송
-            success = await self.webhook_service.send_webhook(webhook_data)
+            # 데이터베이스에 인증 기록 저장
+            success = self.verification_manager.add_verification(
+                user_id=str(message.author.id),
+                username=message.author.name,
+                message_content=message.content,
+                image_urls=image_urls,
+                verification_datetime=current_time
+            )
             
             await message.clear_reactions()
             
@@ -214,6 +224,20 @@ class VerificationService:
                 
                 await channel.send(embed=embed)
                 logger.info("모든 멤버 인증 완료 메시지 전송")
+                
+                # # 웹훅 전송
+                # if self.webhook_service and self.config.WEBHOOK_URL:
+                #     webhook_data = {
+                #         "content": "🎉 모든 멤버가 인증을 완료했습니다!",
+                #         "embeds": [{
+                #             "title": "🎉 인증 완료",
+                #             "description": self.config.MESSAGES['all_verified'],
+                #             "color": 0x00ff00,
+                #             "footer": {"text": f"확인 시간: {self.time_util.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+                #         }]
+                #     }
+                #     await self.webhook_service.send_webhook(webhook_data)
+                
             except discord.HTTPException as e:
                 logger.error(f"메시지 전송 중 오류: {e}")
             return
@@ -223,6 +247,9 @@ class VerificationService:
         
         # 알림 타입 판단 (일일 or 전일)
         is_daily = "daily" in message_template.lower()
+        
+        # 웹훅 데이터 준비 (웹훅 서비스가 있는 경우)
+        webhook_embeds = []
         
         # 각 청크별로 메시지 전송
         for i, chunk in enumerate(mention_chunks):
@@ -237,21 +264,8 @@ class VerificationService:
                 if is_daily:
                     now = self.time_util.now()
                     
-                    # 일일 종료 시간 계산
-                    if self.config.DAILY_END_HOUR < 12:  # 다음날 새벽인 경우
-                        end_time = (now + datetime.timedelta(days=1)).replace(
-                            hour=self.config.DAILY_END_HOUR,
-                            minute=self.config.DAILY_END_MINUTE,
-                            second=self.config.DAILY_END_SECOND,
-                            microsecond=0
-                        )
-                    else:
-                        end_time = now.replace(
-                            hour=self.config.DAILY_END_HOUR,
-                            minute=self.config.DAILY_END_MINUTE,
-                            second=self.config.DAILY_END_SECOND,
-                            microsecond=0
-                        )
+                    # 일일 종료 시간 계산 (공통 함수 사용)
+                    _, end_time = self.time_util.get_verification_time_range_for_current_period()
                     
                     # 남은 시간 계산
                     time_left = end_time - now
@@ -277,10 +291,28 @@ class VerificationService:
                     embed.set_footer(text=f"확인 시간: {self.time_util.now().strftime('%Y-%m-%d %H:%M:%S')}")
                 
                 await channel.send(embed=embed)
+                
+                # 웹훅용 임베드 데이터 추가
+                webhook_embeds.append({
+                    "title": embed.title,
+                    "description": embed.description,
+                    "color": embed.color.value if embed.color else 0xff0000,
+                    "fields": [{"name": field.name, "value": field.value, "inline": field.inline} for field in embed.fields],
+                    "footer": {"text": embed.footer.text} if embed.footer else None
+                })
+                
             except discord.HTTPException as e:
                 logger.error(f"메시지 전송 중 오류: {e}")
+        
+        # 웹훅으로도 전송 (웹훅 서비스가 있는 경우)
+        if self.webhook_service and self.config.WEBHOOK_URL and webhook_embeds:
+            webhook_data = {
+                "content": f"⚠️ 인증 미완료 알림 ({len(unverified_members)}명)",
+                "embeds": webhook_embeds
+            }
+            await self.webhook_service.send_webhook(webhook_data)
     
-    async def check_daily_verification(self):
+    async def check_daily_verification(self) -> None:
         """일일 인증 체크"""
         if self._check_in_progress:
             logger.warning("이미 인증 체크가 진행 중입니다.")
@@ -290,17 +322,23 @@ class VerificationService:
         logger.info("일일 인증 체크 시작")
         
         try:
+            # 허용된 채널 중 첫 번째를 인증 채널로 사용
+            if not self.config.ALLOWED_CHANNELS:
+                logger.error("허용된 채널이 설정되지 않았습니다.")
+                return
+                
+            channel_id = self.config.ALLOWED_CHANNELS[0]
+            channel = self.bot.get_channel(channel_id)
+            
+            if not channel:
+                logger.error(f"인증 채널을 찾을 수 없습니다: {channel_id}")
+                return
+                
             # 현재 날짜가 체크를 건너뛰어야 하는 날짜인지 확인
             now = self.time_util.now()
             if self.time_util.should_skip_check(now):
                 reason = "주말" if self.time_util.is_weekend(now.weekday()) else "공휴일"
                 logger.info(f"일일 인증 체크 건너뜀 ({reason})")
-                return
-                
-            # 인증 채널 가져오기
-            channel = self.bot.get_channel(self.config.VERIFICATION_CHANNEL_ID)
-            if not channel:
-                logger.error(f"인증 채널을 찾을 수 없음: {self.config.VERIFICATION_CHANNEL_ID}")
                 return
                 
             # 체크 기간 계산
@@ -336,29 +374,26 @@ class VerificationService:
             self._check_in_progress = False
             logger.info("일일 인증 체크 완료")
             
-    async def check_yesterday_verification(self):
-        """전일 인증 체크"""
-        if self._check_in_progress:
-            logger.warning("이미 인증 체크가 진행 중입니다.")
-            return
-            
-        self._check_in_progress = True
-        logger.info("전일 인증 체크 시작")
-        
+    async def check_yesterday_verification(self) -> None:
+        """어제 인증 체크"""
         try:
-            # 전일 날짜 계산
-            yesterday = self.time_util.now() - datetime.timedelta(days=1)
+            # 허용된 채널 중 첫 번째를 인증 채널로 사용
+            if not self.config.ALLOWED_CHANNELS:
+                logger.error("허용된 채널이 설정되지 않았습니다.")
+                return
+                
+            channel_id = self.config.ALLOWED_CHANNELS[0]
+            channel = self.bot.get_channel(channel_id)
             
+            if not channel:
+                logger.error(f"인증 채널을 찾을 수 없습니다: {channel_id}")
+                return
+                
             # 어제가 체크를 건너뛰어야 하는 날짜인지 확인
+            yesterday = self.time_util.now() - datetime.timedelta(days=1)
             if self.time_util.should_skip_check(yesterday):
                 reason = "주말" if self.time_util.is_weekend(yesterday.weekday()) else "공휴일"
                 logger.info(f"전일 인증 체크 건너뜀 ({reason})")
-                return
-                
-            # 인증 채널 가져오기
-            channel = self.bot.get_channel(self.config.VERIFICATION_CHANNEL_ID)
-            if not channel:
-                logger.error(f"인증 채널을 찾을 수 없음: {self.config.VERIFICATION_CHANNEL_ID}")
                 return
                 
             # 체크 기간 계산 (전일)

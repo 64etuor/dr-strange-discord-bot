@@ -2,49 +2,45 @@
 휴가 관리 모듈
 """
 import os
-import json
 import datetime
-import logging
 from typing import Dict, List, Set, Optional
+from db import VacationManager
+from db.migration import DataMigration
+from logging_utils import get_logger
 
-logger = logging.getLogger('verification_bot')
+logger = get_logger()
 
 class VacationService:
     """휴가 관리 서비스"""
     
-    def __init__(self, config, time_util):
+    def __init__(self, config, time_util, vacation_manager=None):
         self.config = config
         self.time_util = time_util
-        self.vacations: Dict[str, Set[str]] = {}  # {user_id: {date1, date2, ...}}
+        
+        # ConfigManager에서 vacation_manager를 전달받음
+        if vacation_manager:
+            self.vacation_manager = vacation_manager
+            self.db_manager = vacation_manager.db_manager
+        else:
+            raise ValueError("vacation_manager가 필요합니다. ConfigManager에서 전달받아야 합니다.")
+        
+        # 하위 호환성을 위한 기존 JSON 지원
         self.vacations_file = "vacations.json"
-        self._load_vacations()
+        self._migrate_from_json_if_needed()
     
-    def _load_vacations(self):
-        """저장된 휴가 정보를 로드합니다"""
+    def _migrate_from_json_if_needed(self):
+        """기존 JSON 파일이 존재하면 데이터베이스로 마이그레이션"""
         try:
             if os.path.exists(self.vacations_file):
-                with open(self.vacations_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    # JSON에서는 set을 직접 저장할 수 없으므로 변환 필요
-                    self.vacations = {user_id: set(dates) for user_id, dates in data.items()}
-                logger.info(f"{len(self.vacations)} 명의 사용자 휴가 정보를 로드했습니다.")
-            else:
-                logger.info("휴가 정보 파일이 없습니다. 새로 생성합니다.")
-                self.vacations = {}
+                logger.info(f"기존 {self.vacations_file} 파일을 발견했습니다. 데이터베이스로 마이그레이션을 시도합니다.")
+                migration = DataMigration(self.db_manager)
+                if migration.migrate_vacations_from_json(self.vacations_file):
+                    # 마이그레이션 성공 시 백업 생성
+                    migration.backup_original_files("holidays.csv", self.vacations_file)
+                    logger.info("휴가 데이터 마이그레이션이 완료되었습니다.")
         except Exception as e:
-            logger.error(f"휴가 정보 로드 중 오류: {e}", exc_info=True)
-            self.vacations = {}
+            logger.error(f"휴가 마이그레이션 중 오류: {e}", exc_info=True)
     
-    def _save_vacations(self):
-        """휴가 정보를 저장합니다"""
-        try:
-            # set을 list로 변환하여 저장
-            data = {user_id: list(dates) for user_id, dates in self.vacations.items()}
-            with open(self.vacations_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            logger.info(f"휴가 정보가 {self.vacations_file}에 저장되었습니다.")
-        except Exception as e:
-            logger.error(f"휴가 정보 저장 중 오류: {e}", exc_info=True)
     
     def register_vacation(self, user_id: int, date_str: Optional[str] = None) -> str:
         """
@@ -82,21 +78,15 @@ class VacationService:
             # 사용자 ID를 문자열로 변환
             user_id_str = str(user_id)
             
-            # 해당 사용자의 휴가 목록이 없으면 생성
-            if user_id_str not in self.vacations:
-                self.vacations[user_id_str] = set()
-            
             # 이미 등록된 날짜인지 확인
-            if date_str in self.vacations[user_id_str]:
+            if self.vacation_manager.is_user_on_vacation(user_id_str, target_date):
                 return f"{date_str} 날짜는 이미 휴가로 등록되어 있습니다."
             
             # 휴가 등록
-            self.vacations[user_id_str].add(date_str)
-            
-            # 변경 사항 저장
-            self._save_vacations()
-            
-            return f"{date_str} 날짜가 휴가로 등록되었습니다."
+            if self.vacation_manager.add_vacation(user_id_str, date_str):
+                return f"{date_str} 날짜가 휴가로 등록되었습니다."
+            else:
+                return f"{date_str} 날짜 휴가 등록에 실패했습니다."
             
         except Exception as e:
             logger.error(f"휴가 등록 중 오류: {e}", exc_info=True)
@@ -115,20 +105,18 @@ class VacationService:
         try:
             user_id_str = str(user_id)
             
-            # 사용자의 휴가 정보가 없는 경우
-            if user_id_str not in self.vacations or not self.vacations[user_id_str]:
+            # 현재 등록된 휴가 수 확인
+            vacation_dates = self.vacation_manager.get_user_vacations(user_id_str)
+            if not vacation_dates:
                 return "등록된 휴가가 없습니다."
             
-            # 휴가 수 기록
-            vacation_count = len(self.vacations[user_id_str])
+            # 모든 휴가 취소
+            vacation_count = self.vacation_manager.remove_all_vacations(user_id_str)
             
-            # 휴가 취소
-            self.vacations[user_id_str] = set()
-            
-            # 변경 사항 저장
-            self._save_vacations()
-            
-            return f"모든 휴가({vacation_count}개)가 취소되었습니다."
+            if vacation_count > 0:
+                return f"모든 휴가({vacation_count}개)가 취소되었습니다."
+            else:
+                return "등록된 휴가가 없습니다."
             
         except Exception as e:
             logger.error(f"휴가 취소 중 오류: {e}", exc_info=True)
@@ -145,11 +133,8 @@ class VacationService:
             휴가 날짜 목록 (정렬됨)
         """
         user_id_str = str(user_id)
-        if user_id_str not in self.vacations:
-            return []
-        
-        # 날짜순으로 정렬하여 반환
-        return sorted(list(self.vacations[user_id_str]))
+        vacation_dates = self.vacation_manager.get_user_vacations(user_id_str)
+        return sorted(list(vacation_dates))
     
     def is_user_on_vacation(self, user_id: int, date: Optional[datetime.date] = None) -> bool:
         """
@@ -165,7 +150,5 @@ class VacationService:
         if date is None:
             date = self.time_util.now().date()
         
-        date_str = date.strftime('%Y-%m-%d')
         user_id_str = str(user_id)
-        
-        return user_id_str in self.vacations and date_str in self.vacations[user_id_str] 
+        return self.vacation_manager.is_user_on_vacation(user_id_str, date) 

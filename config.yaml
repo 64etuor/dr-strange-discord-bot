@@ -1,0 +1,76 @@
+# Discord Bot Configuration
+bot:
+  intents:
+    message_content: true
+    guilds: true
+    reactions: true
+    members: true
+
+# Message Limits
+message_limits:
+  max_length: 1900
+  max_attachment_size: 8388608 # 8MB
+  history_limit: 1000
+  max_mentions_per_chunk: 20 # 각 청크당 최대 멘션 수
+
+# Retry Configuration
+retry:
+  max_attempts: 3
+  webhook_timeout: 10
+
+# Verification Configuration
+verification:
+  keywords:
+    - 인증
+    - TODO
+    - 투두
+    - 계획
+
+# Time Configuration
+time:
+  timezone: Asia/Seoul
+  daily_check_hour: 11
+  daily_check_minute: 0
+  yesterday_check_hour: 9
+  yesterday_check_minute: 0
+  daily_start_hour: 0
+  daily_start_minute: 0
+  daily_end_hour: 23
+  daily_end_minute: 59
+  daily_end_second: 59
+  weekday_names:
+    - 월
+    - 화
+    - 수
+    - 목
+    - 금
+    - 토
+    - 일
+
+# Holidays Configuration
+holidays:
+  file: holidays.csv
+  skip: true
+
+# Message Templates
+messages:
+  verification_success: "{name} 님, 오늘의 TODO가 등록되었습니다!"
+  verification_error: "에러가 발생했습니다. 다시 시도해 주세요."
+  attach_image_request: "사진이 첨부되지 않았습니다. 사진을 첨부해주세요!"
+  daily_check: "⚠️ 아직 오늘의 TODO 인증을 하지 않은 멤버들이에요:\n{members}\n까먹으신 건 아니죠? :) 💪"
+  yesterday_check: "⚠️ 어제 인증을 하지 않은 멤버(들)입니다:\n{members}\n오늘은 잊지 말고 TODO를 올려주세요!"
+  all_verified: "🎉 모든 멤버가 인증을 완료했네요!\n💪 꾸준한 노력이 멋져요. 오늘도 화이팅입니다! 💫"
+  permission_error: "❌ 관리자만 사용할 수 있는 명령어입니다."
+  bot_permission_error: "봇 리액션 권한이 누락되어 있습니다."
+  vacation_registered: "🏖️ {date} 날짜가 휴가로 등록되었습니다. 해당 날짜에는 인증 체크에서 제외됩니다."
+  vacation_already_registered: "⚠️ {date} 날짜는 이미 휴가로 등록되어 있습니다."
+  vacation_future_only: "❌ 과거 날짜는 휴가로 등록할 수 없습니다."
+  vacation_invalid_format: "❌ 날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식으로 입력해주세요."
+  vacation_all_canceled: "✅ 모든 휴가({count}개)가 취소되었습니다."
+  vacation_none_registered: "ℹ️ 등록된 휴가가 없습니다."
+
+# Logging Configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: null # 파일로 로그를 저장하려면 경로 지정 (예: 'logs/bot.log')

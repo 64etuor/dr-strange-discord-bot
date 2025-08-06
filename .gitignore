@@ -60,5 +60,4 @@ log/
 *~
 
 # 프로젝트 특정
-holidays.csv
-config.yaml
+db/

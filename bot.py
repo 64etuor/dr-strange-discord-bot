@@ -5,12 +5,6 @@ import discord
 from discord.ext import commands
 import datetime
 import asyncio
-import logging
-
-# Disable discord.py's default logging handler to prevent duplicate logs
-discord_logger = logging.getLogger('discord')
-discord_logger.setLevel(logging.INFO)
-discord_logger.handlers = []
 
 from message_utils import MessageUtility
 from time_utils import TimeUtility
@@ -18,9 +12,10 @@ from webhook_service import WebhookService
 from verification_service import VerificationService
 from vacation_service import VacationService
 from tasks import TaskManager
-from commands import CommandHandler
+from commands import CommandSetup
+from logging_utils import get_logger
 
-logger = logging.getLogger('verification_bot')
+logger = get_logger()
 
 class VerificationBot:
     """인증 봇 클래스"""
@@ -45,22 +40,22 @@ class VerificationBot:
         if self.config.BOT_INTENTS.get('members', True):
             intents.members = True
             
-        # 설정에서 프리픽스 로드
-        self.bot = commands.Bot(command_prefix=self.config.BOT_PREFIX, intents=intents)
+        # 슬래시 명령어만 사용하므로 빈 문자열로 설정
+        self.bot = commands.Bot(command_prefix="", intents=intents)
         
-        # 서비스 초기화
+        # 서비스 초기화 (데이터베이스 매니저 공유)
         self.webhook_service = WebhookService(self.config)
-        self.vacation_service = VacationService(self.config, self.time_util)
+        self.vacation_service = VacationService(self.config, self.time_util, self.config.vacation_manager)
         self.verification_service = VerificationService(
             self.config, self.bot, self.message_util, self.time_util, self.webhook_service,
-            self.vacation_service
+            self.vacation_service, self.config.verification_manager
         )
         
         # 태스크 관리자 초기화
         self.task_manager = TaskManager(self.bot, self.config, self.verification_service)
         
         # 명령어 핸들러 초기화
-        self.command_handler = CommandHandler(
+        self.command_handler = CommandSetup(
             self.bot, self.config, self.verification_service, self.task_manager, 
             self.time_util, self.vacation_service
         )
@@ -100,13 +95,15 @@ class VerificationBot:
             if message.author == self.bot.user:
                 return
                 
-            try:
-                if self.message_util.is_verification_message(message.content):
-                    await self.verification_service.process_verification_message(message)
-            except Exception as e:
-                logger.error(f"메시지 처리 중 오류: {e}", exc_info=True)
+            # 허용된 채널에서만 인증 처리
+            if message.channel.id in self.config.ALLOWED_CHANNELS:
+                try:
+                    if self.message_util.is_verification_message(message.content):
+                        await self.verification_service.process_verification_message(message)
+                except Exception as e:
+                    logger.error(f"메시지 처리 중 오류: {e}", exc_info=True)
             
-            await self.bot.process_commands(message)
+            # 슬래시 명령어만 사용하므로 process_commands 호출하지 않음
     
     async def _sync_commands(self):
         """슬래시 명령어 동기화"""
@@ -123,19 +120,18 @@ class VerificationBot:
     def run(self):
         """봇 실행"""
         try:
-            if not self.config.TOKEN:
-                raise ValueError("Discord Bot Token is missing. Please check .env file.")
+            if not self.config.DISCORD_TOKEN:
+                raise ValueError("Discord Bot Token is missing. Please check environment variable DISCORD_TOKEN.")
                 
             logger.info("Starting bot...")
-            logger.info(f"Command prefix: {self.config.BOT_PREFIX}")
-            logger.info(f"Channel ID configured: {self.config.VERIFICATION_CHANNEL_ID}")
+            logger.info(f"Allowed channels: {self.config.ALLOWED_CHANNELS}")
             logger.info(f"Intents status:")
             logger.info(f"- members: {self.bot.intents.members}")
             logger.info(f"- message_content: {self.bot.intents.message_content}")
             logger.info(f"- guilds: {self.bot.intents.guilds}")
             logger.info(f"- reactions: {self.bot.intents.reactions}")
             
-            self.bot.run(self.config.TOKEN)
+            self.bot.run(self.config.DISCORD_TOKEN)
         except Exception as e:
             logger.error(f"Bot error: {str(e)}", exc_info=True)
         finally:

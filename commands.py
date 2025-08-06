@@ -5,17 +5,58 @@ import datetime
 import discord
 from discord import app_commands
 from discord.ext import commands
-import logging
-from typing import Optional, List, Tuple
+from typing import Optional, List
+from logging_utils import get_logger
 
-logger = logging.getLogger('verification_bot')
+logger = get_logger()
 
-class VerificationCommands(commands.Cog):
+class BaseCommands(commands.Cog):
+    """기본 명령어 클래스 - 공통 로직 포함"""
+    
+    def __init__(self, bot, config):
+        self.bot = bot
+        self.config = config
+    
+    def _check_channel_permission(self, interaction: discord.Interaction) -> bool:
+        """
+        채널 권한 체크 - 허용되지 않은 채널에서는 조용히 무시
+        
+        Args:
+            interaction: Discord interaction 객체
+            
+        Returns:
+            bool: 허용된 채널이면 True, 아니면 False
+        """
+        if self.config.ALLOWED_CHANNELS and interaction.channel_id not in self.config.ALLOWED_CHANNELS:
+            return False
+        return True
+    
+    def _get_verification_channel(self, interaction: discord.Interaction):
+        """
+        인증 채널 가져오기
+        
+        Args:
+            interaction: Discord interaction 객체
+            
+        Returns:
+            tuple: (channel, error_message) - 채널이 없으면 (None, error_message)
+        """
+        if not self.config.ALLOWED_CHANNELS:
+            return None, "인증 채널이 설정되지 않았습니다. 관리자에게 문의하세요."
+            
+        channel_id = self.config.ALLOWED_CHANNELS[0]
+        channel = self.bot.get_channel(channel_id)
+        
+        if not channel:
+            return None, "인증 채널을 찾을 수 없습니다. 관리자에게 문의하세요."
+            
+        return channel, None
+
+class VerificationCommands(BaseCommands):
     """인증 관련 명령어 Cog"""
     
     def __init__(self, bot, config, verification_service, task_manager, time_util):
-        self.bot = bot
-        self.config = config
+        super().__init__(bot, config)
         self.verification_service = verification_service
         self.task_manager = task_manager
         self.time_util = time_util
@@ -33,17 +74,18 @@ class VerificationCommands(commands.Cog):
     @app_commands.command(name="verify_status", description="내 인증 상태 확인")
     async def verify_status(self, interaction: discord.Interaction):
         """사용자의 현재 인증 상태를 확인합니다"""
+        # 채널 권한 체크 - 허용되지 않은 채널에서는 조용히 무시
+        if not self._check_channel_permission(interaction):
+            return
+            
         # 응답 지연 설정 (데이터 조회에 시간이 걸릴 수 있음)
         await interaction.response.defer(ephemeral=True, thinking=True)
         
         try:
-            # 채널 가져오기
-            channel = self.bot.get_channel(self.config.VERIFICATION_CHANNEL_ID)
-            if not channel:
-                await interaction.followup.send(
-                    "인증 채널을 찾을 수 없습니다. 관리자에게 문의하세요.",
-                    ephemeral=True
-                )
+            # 채널 가져오기 (허용된 채널 중 첫 번째)
+            channel, error_message = self._get_verification_channel(interaction)
+            if channel is None:
+                await interaction.followup.send(error_message, ephemeral=True)
                 return
                 
             # 오늘 날짜 범위 계산
@@ -97,29 +139,8 @@ class VerificationCommands(commands.Cog):
                 now = self.time_util.now()
                 today_date = now.date()
                 
-                # 인증 시간 범위 계산
-                start_time = now.replace(
-                    hour=self.config.DAILY_START_HOUR,
-                    minute=self.config.DAILY_START_MINUTE,
-                    second=0,
-                    microsecond=0
-                )
-                
-                # 종료 시간이 새벽인 경우 (다음날)
-                if self.config.DAILY_END_HOUR < 12:
-                    end_time = (now + datetime.timedelta(days=1)).replace(
-                        hour=self.config.DAILY_END_HOUR,
-                        minute=self.config.DAILY_END_MINUTE,
-                        second=self.config.DAILY_END_SECOND,
-                        microsecond=0
-                    )
-                else:
-                    end_time = now.replace(
-                        hour=self.config.DAILY_END_HOUR,
-                        minute=self.config.DAILY_END_MINUTE,
-                        second=self.config.DAILY_END_SECOND,
-                        microsecond=0
-                    )
+                # 인증 시간 범위 계산 (공통 함수 사용)
+                start_time, end_time = self.time_util.get_verification_time_range_for_current_period()
                 
                 # 주말이나 공휴일인지 확인
                 if self.time_util.should_skip_check(now):
@@ -142,7 +163,7 @@ class VerificationCommands(commands.Cog):
                     
                     embed.add_field(
                         name="📝 인증 방법",
-                        value=f"인증 채널(<#{self.config.VERIFICATION_CHANNEL_ID}>)에 인증 키워드와 함께 이미지를 첨부하세요.\n"
+                        value=f"인증 채널(<#{self.config.ALLOWED_CHANNELS[0]}>)에 인증 키워드와 함께 이미지를 첨부하세요.\n"
                               f"인증 키워드: {', '.join([f'`{keyword}`' for keyword in self.config.VERIFICATION_KEYWORDS[:3]])} 등",
                         inline=False
                     )
@@ -313,8 +334,7 @@ class VerificationCommands(commands.Cog):
         
         embed.add_field(
             name="📅 인증 시간 범위",
-            value=f"시작: {self.config.DAILY_START_HOUR:02d}:{self.config.DAILY_START_MINUTE:02d}\n"
-                  f"종료: {self.config.DAILY_END_HOUR:02d}:{self.config.DAILY_END_MINUTE:02d}:{self.config.DAILY_END_SECOND:02d}",
+            value=f"{self.time_util.format_verification_time_range()}",
             inline=False
         )
         
@@ -323,12 +343,11 @@ class VerificationCommands(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
 
-class HolidayCommands(commands.Cog):
+class HolidayCommands(BaseCommands):
     """공휴일 관련 명령어 Cog"""
     
     def __init__(self, bot, config, time_util):
-        self.bot = bot
-        self.config = config
+        super().__init__(bot, config)
         self.time_util = time_util
     
     @commands.Cog.listener()
@@ -500,12 +519,11 @@ class HolidayCommands(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
 
-class AdminCommands(commands.Cog):
+class AdminCommands(BaseCommands):
     """관리자 전용 명령어 Cog"""
     
     def __init__(self, bot, config, verification_service):
-        self.bot = bot
-        self.config = config
+        super().__init__(bot, config)
         self.verification_service = verification_service
     
     @commands.Cog.listener()
@@ -533,6 +551,10 @@ class AdminCommands(commands.Cog):
             )
             return
         
+        # 채널 권한 체크 - 허용되지 않은 채널에서는 조용히 무시
+        if not self._check_channel_permission(interaction):
+            return
+
         await interaction.response.defer(thinking=True)
         
         if check_type.value == "daily" or check_type.value == "both":
@@ -560,6 +582,10 @@ class AdminCommands(commands.Cog):
             )
             return
             
+        # 채널 권한 체크 - 허용되지 않은 채널에서는 조용히 무시
+        if not self._check_channel_permission(interaction):
+            return
+
         await interaction.response.defer(thinking=True)
         
         await self.verification_service.check_daily_verification()
@@ -573,12 +599,11 @@ class AdminCommands(commands.Cog):
         await interaction.followup.send(embed=embed)
 
 
-class StatusCommands(commands.Cog):
+class StatusCommands(BaseCommands):
     """상태 확인 명령어 Cog"""
     
     def __init__(self, bot, config, task_manager, time_util):
-        self.bot = bot
-        self.config = config
+        super().__init__(bot, config)
         self.task_manager = task_manager
         self.time_util = time_util
     
@@ -590,6 +615,10 @@ class StatusCommands(commands.Cog):
     @app_commands.command(name="status", description="봇 상태 정보 확인")
     async def status(self, interaction: discord.Interaction):
         """봇의 현재 상태와 설정 정보를 확인합니다"""
+        # 채널 권한 체크 - 허용되지 않은 채널에서는 조용히 무시
+        if not self._check_channel_permission(interaction):
+            return
+
         # 현재 시간
         now = self.time_util.now()
         
@@ -625,7 +654,7 @@ class StatusCommands(commands.Cog):
         # 기본 설정 정보
         embed.add_field(
             name="📝 기본 설정",
-            value=f"인증 채널: <#{self.config.VERIFICATION_CHANNEL_ID}>\n"
+            value=f"인증 채널: <#{self.config.ALLOWED_CHANNELS[0]}>\n"
                   f"공휴일 스킵: {'활성화' if self.config.SKIP_HOLIDAYS else '비활성화'}\n"
                   f"등록된 공휴일: {len(self.config.HOLIDAYS)}개",
             inline=False
@@ -650,8 +679,7 @@ class StatusCommands(commands.Cog):
         # 인증 시간 범위
         embed.add_field(
             name="🕒 인증 시간 범위",
-            value=f"시작: {self.config.DAILY_START_HOUR:02d}:{self.config.DAILY_START_MINUTE:02d}\n"
-                  f"종료: {self.config.DAILY_END_HOUR:02d}:{self.config.DAILY_END_MINUTE:02d}:{self.config.DAILY_END_SECOND:02d}",
+            value=f"{self.time_util.format_verification_time_range()}",
             inline=False
         )
         
@@ -719,19 +747,18 @@ class StatusCommands(commands.Cog):
             name="⏰ 체크 시간",
             value=f"일일 체크: 매일 {self.config.DAILY_CHECK_HOUR:02d}:{self.config.DAILY_CHECK_MINUTE:02d} KST\n"
                   f"어제 체크: 매일 {self.config.YESTERDAY_CHECK_HOUR:02d}:{self.config.YESTERDAY_CHECK_MINUTE:02d} KST\n"
-                  f"인증 가능 시간: {self.config.DAILY_START_HOUR:02d}:{self.config.DAILY_START_MINUTE:02d} ~ {self.config.DAILY_END_HOUR:02d}:{self.config.DAILY_END_MINUTE:02d}",
+                  f"인증 가능 시간: {self.time_util.format_verification_time_range()}",
             inline=False
         )
         
         await interaction.response.send_message(embed=embed)
 
 
-class VacationCommands(commands.Cog):
+class VacationCommands(BaseCommands):
     """휴가 관련 명령어 Cog"""
     
     def __init__(self, bot, config, vacation_service, time_util):
-        self.bot = bot
-        self.config = config
+        super().__init__(bot, config)
         self.vacation_service = vacation_service
         self.time_util = time_util
     
@@ -862,8 +889,4 @@ class CommandSetup:
         await self.bot.add_cog(vacation_commands)
         
         self.add_cogs_done = True
-        logger.info("명령어 Cog 추가 완료")
-
-
-# CommandHandler 클래스를 CommandSetup 클래스로 대체
-CommandHandler = CommandSetup 
+        logger.info("명령어 Cog 추가 완료") 

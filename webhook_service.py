@@ -3,9 +3,9 @@
 """
 import aiohttp
 import asyncio
-import logging
+from logging_utils import get_logger
 
-logger = logging.getLogger('verification_bot')
+logger = get_logger()
 
 class WebhookService:
     """웹훅 통신 서비스 클래스"""

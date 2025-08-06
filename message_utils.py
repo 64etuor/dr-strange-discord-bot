@@ -28,17 +28,21 @@ class MessageUtility:
                 attachment.content_type.startswith('image/') and 
                 attachment.size <= self.config.MAX_ATTACHMENT_SIZE)
     
-    def chunk_mentions(self, members: List[discord.Member], max_per_chunk: int = 20) -> List[str]:
+    def chunk_mentions(self, members: List[discord.Member], max_per_chunk: int = None) -> List[str]:
         """
         멤버 멘션을 Discord 메시지 길이 제한에 맞게 청크로 분할
         
         Args:
             members: 멘션할 멤버 목록
-            max_per_chunk: 각 청크당 최대 멤버 수 (기본값: 20)
+            max_per_chunk: 각 청크당 최대 멤버 수 (None인 경우 설정 파일 값 사용)
             
         Returns:
             청크 리스트
         """
+        # 설정 파일에서 기본값 가져오기
+        if max_per_chunk is None:
+            max_per_chunk = self.config.MAX_MENTIONS_PER_CHUNK
+            
         chunks = []
         current_chunk = []
         current_length = 0
