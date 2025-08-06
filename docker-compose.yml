@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  discord-bot:
+    build: .
+    container_name: discord-bot-strange
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./db:/app/db
+    networks:
+      - bot-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  bot-network:
+    driver: bridge

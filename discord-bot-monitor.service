@@ -1,0 +1,14 @@
+[Unit]
+Description=Discord Bot Container Monitor
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/bin/bash /path/to/discord-bot-strange/monitor.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 
