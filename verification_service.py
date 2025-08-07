@@ -248,6 +248,12 @@ class VerificationService:
         # 알림 타입 판단 (일일 or 전일)
         is_daily = "daily" in message_template.lower()
         
+        # 알림 제목 설정
+        if is_daily:
+            alert_title = "⚠️ 금일 인증 미완료 알림"
+        else:
+            alert_title = "⚠️ 전일 인증 미완료 알림"
+        
         # 웹훅 데이터 준비 (웹훅 서비스가 있는 경우)
         webhook_embeds = []
         
@@ -255,7 +261,7 @@ class VerificationService:
         for i, chunk in enumerate(mention_chunks):
             try:
                 embed = discord.Embed(
-                    title="⚠️ 인증 미완료 알림",
+                    title=alert_title,
                     description=message_template.format(members=chunk),
                     color=discord.Color.red() if not is_daily else discord.Color.gold()
                 )

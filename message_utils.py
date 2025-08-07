@@ -29,44 +29,37 @@ class MessageUtility:
                 attachment.size <= self.config.MAX_ATTACHMENT_SIZE)
     
     def chunk_mentions(self, members: List[discord.Member], max_per_chunk: int = None) -> List[str]:
-        """
-        멤버 멘션을 Discord 메시지 길이 제한에 맞게 청크로 분할
+    """
+    멤버 멘션을 Discord 메시지 길이 제한에 맞게 청크로 분할
+    """
+    if max_per_chunk is None:
+        max_per_chunk = self.config.MAX_MENTIONS_PER_CHUNK
         
-        Args:
-            members: 멘션할 멤버 목록
-            max_per_chunk: 각 청크당 최대 멤버 수 (None인 경우 설정 파일 값 사용)
-            
-        Returns:
-            청크 리스트
-        """
-        # 설정 파일에서 기본값 가져오기
-        if max_per_chunk is None:
-            max_per_chunk = self.config.MAX_MENTIONS_PER_CHUNK
-            
-        chunks = []
-        current_chunk = []
-        current_length = 0
-        current_count = 0
+    chunks = []
+    current_chunk = []
+    current_length = 0
+    current_count = 0
+    
+    for member in members:
+        mention = member.mention
         
-        for member in members:
-            mention = member.mention
-            
-            # 길이 또는 멤버 수 제한 초과 시 새 청크 시작
-            if (current_length + len(mention) + 2 > self.config.MAX_MESSAGE_LENGTH or 
-                current_count >= max_per_chunk):
-                chunks.append(", ".join(current_chunk))
-                current_chunk = []
-                current_length = 0
-                current_count = 0
-            
-            current_chunk.append(mention)
-            current_length += len(mention) + 2  # 쉼표와 공백 고려
-            current_count += 1
+        mention_length = 25
         
-        if current_chunk:
-            chunks.append(", ".join(current_chunk))
-            
-        return chunks
+        if (current_length + mention_length + 2 > self.config.MAX_MESSAGE_LENGTH or 
+            current_count >= max_per_chunk):
+            chunks.append(" ".join(current_chunk))
+            current_chunk = []
+            current_length = 0
+            current_count = 0
+        
+        current_chunk.append(mention)
+        current_length += mention_length + 2
+        current_count += 1
+    
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+        
+    return chunks
     
     def format_time_delta(self, delta: datetime.timedelta) -> str:
         """

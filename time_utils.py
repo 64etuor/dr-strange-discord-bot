@@ -34,8 +34,7 @@ class TimeUtility:
         """오늘 날짜의 인증 시간 범위 반환"""
         current_time = self.now()
         
-        # 하루가 12시부터 이튿날 새벽 3시까지인 경우
-        # 시작 시간 설정
+        # 오늘 날짜 기준으로 시작 시간 설정
         start_time = current_time.replace(
             hour=self.config.DAILY_START_HOUR,
             minute=self.config.DAILY_START_MINUTE,
@@ -43,7 +42,7 @@ class TimeUtility:
             microsecond=0
         )
         
-        # 종료 시간이 새벽인 경우 (예: 03시)
+        # 종료 시간이 새벽인 경우 (예: 03시) - 다음날로 설정
         if self.config.DAILY_END_HOUR < 12:
             end_time = (current_time + datetime.timedelta(days=1)).replace(
                 hour=self.config.DAILY_END_HOUR,
@@ -57,17 +56,6 @@ class TimeUtility:
                 minute=self.config.DAILY_END_MINUTE,
                 second=self.config.DAILY_END_SECOND,
                 microsecond=999999
-            )
-        
-        # 현재 시간이 자정을 넘었지만 설정 종료 시간 이전인 경우 (새벽)
-        current_hour = current_time.hour
-        if current_hour < self.config.DAILY_END_HOUR:
-            # 전날로부터 시작
-            start_time = (current_time - datetime.timedelta(days=1)).replace(
-                hour=self.config.DAILY_START_HOUR,
-                minute=self.config.DAILY_START_MINUTE,
-                second=0,
-                microsecond=0
             )
         
         return start_time, end_time
