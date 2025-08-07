@@ -29,37 +29,37 @@ class MessageUtility:
                 attachment.size <= self.config.MAX_ATTACHMENT_SIZE)
     
     def chunk_mentions(self, members: List[discord.Member], max_per_chunk: int = None) -> List[str]:
-    """
-    멤버 멘션을 Discord 메시지 길이 제한에 맞게 청크로 분할
-    """
-    if max_per_chunk is None:
-        max_per_chunk = self.config.MAX_MENTIONS_PER_CHUNK
+        """
+        멤버 멘션을 Discord 메시지 길이 제한에 맞게 청크로 분할
+        """
+        if max_per_chunk is None:
+            max_per_chunk = self.config.MAX_MENTIONS_PER_CHUNK
+            
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        current_count = 0
         
-    chunks = []
-    current_chunk = []
-    current_length = 0
-    current_count = 0
-    
-    for member in members:
-        mention = member.mention
+        for member in members:
+            mention = member.mention
+            
+            mention_length = 25
+            
+            if (current_length + mention_length + 2 > self.config.MAX_MESSAGE_LENGTH or 
+                current_count >= max_per_chunk):
+                chunks.append(" ".join(current_chunk))
+                current_chunk = []
+                current_length = 0
+                current_count = 0
+            
+            current_chunk.append(mention)
+            current_length += mention_length + 2
+            current_count += 1
         
-        mention_length = 25
-        
-        if (current_length + mention_length + 2 > self.config.MAX_MESSAGE_LENGTH or 
-            current_count >= max_per_chunk):
+        if current_chunk:
             chunks.append(" ".join(current_chunk))
-            current_chunk = []
-            current_length = 0
-            current_count = 0
-        
-        current_chunk.append(mention)
-        current_length += mention_length + 2
-        current_count += 1
-    
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
-        
-    return chunks
+            
+        return chunks
     
     def format_time_delta(self, delta: datetime.timedelta) -> str:
         """
